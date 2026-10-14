@@ -14,7 +14,6 @@ dependencies = [
 ]
 
 [project.scripts]
-jev = "jev_ultrafast.demo:main"
 flight-scanner = "flight_scanner.cli:main"
 
 [build-system]
@@ -28,7 +27,6 @@ packages = ["jev_ultrafast", "src/flight_scanner"]
 dev = [
     "pytest>=8.4,<9",
     "ruff>=0.14,<1",
-    "pillow>=11,<13",
     "mypy>=1.18,<2",
 ]
 

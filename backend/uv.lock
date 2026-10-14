@@ -134,7 +134,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
-    { name = "pillow" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -151,7 +150,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.18,<2" },
-    { name = "pillow", specifier = ">=11,<13" },
     { name = "pytest", specifier = ">=8.4,<9" },
     { name = "ruff", specifier = ">=0.14,<1" },
 ]
