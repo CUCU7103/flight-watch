@@ -9,10 +9,11 @@ from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from .browser import daemon_ready, dedicated_browser
 from .cli import process_results, run_jobs
@@ -23,18 +24,36 @@ from .models import DEFAULT_TARGETS_KRW, ScanJob, ScanResult, generate_jobs
 # 웹은 버튼 한 번이 곧 유료 호출이므로 CLI(최대 90일)보다 작게 막는다.
 MAX_JOBS = 10
 WORKERS = 3
+# Google Flights가 판매하는 범위(약 11개월) 밖의 날짜로 유료 검색을 돌리지 않는다.
+MAX_DAYS_AHEAD = 330
 
 # 작업 목록을 받아 process_results 형태의 행(dict) 목록을 돌려주는 함수.
 Runner = Callable[[list[ScanJob]], list[dict]]
 
 
+AirportCode = Annotated[str, StringConstraints(pattern=r"^[A-Za-z]{3}$")]
+
+
 class ScanRequest(BaseModel):
-    origin: str = "ICN"
-    destinations: list[str] = Field(default_factory=lambda: list(DEFAULT_TARGETS_KRW), min_length=1)
-    start: date
-    days: int = 5
-    nights: int = 3
+    # 엄격 모드: true·"1"·1.5 같은 값을 숫자로 조용히 변환하지 않고 거절한다.
+    model_config = ConfigDict(strict=True)
+
+    origin: AirportCode = "ICN"
+    destinations: list[AirportCode] = Field(
+        default_factory=lambda: list(DEFAULT_TARGETS_KRW), min_length=1, max_length=MAX_JOBS
+    )
+    start: date = Field(strict=False)  # FastAPI는 JSON을 파싱한 뒤 검증하므로 날짜 문자열은 허용해야 한다
+    days: int = Field(default=5, ge=1, le=MAX_JOBS)
+    nights: int = Field(default=3, ge=1, le=30)
     target_price_krw: int | None = Field(default=None, gt=0)
+
+
+def public_row(row: dict) -> dict:
+    """화면에 필요 없는 공급자 사용량(usage)은 응답에 싣지 않는다. 공급자가 필드를 늘려도 그대로 새지 않게 한다."""
+    public = {key: value for key, value in row.items() if key != "usage"}
+    if isinstance(public.get("evaluation"), dict):
+        public["evaluation"] = {key: value for key, value in public["evaluation"].items() if key != "usage"}
+    return public
 
 
 @dataclass
@@ -141,7 +160,7 @@ def create_app(
             # 공급자 응답 본문이나 자격증명이 남지 않도록 예외 타입명만 기록한다.
             status, error = "failed", type(exc).__name__
         finally:
-            scan.results, scan.error = results, error
+            scan.results, scan.error = [public_row(row) for row in results], error
             scan.finished_at = datetime.now(timezone.utc).isoformat()
             # 잠금을 먼저 풀고 종료 상태를 공개해야, 종료를 본 클라이언트의 다음 요청이 409를 받지 않는다.
             busy.release()
@@ -155,6 +174,8 @@ def create_app(
         if price is None and not set(destinations) <= set(DEFAULT_TARGETS_KRW):
             raise HTTPException(422, "FUK/NRT 외 노선은 target_price_krw가 필요합니다")
         targets = {dest: price if price is not None else DEFAULT_TARGETS_KRW[dest] for dest in destinations}
+        if request.start > (today or date.today()) + timedelta(days=MAX_DAYS_AHEAD):
+            raise HTTPException(422, f"출발일은 {MAX_DAYS_AHEAD}일 이내여야 합니다")
         try:
             jobs = generate_jobs(
                 request.start, request.days, request.nights, origin=origin, destinations=targets, today=today
@@ -179,6 +200,11 @@ def create_app(
             busy.release()
             raise
         return response
+
+    @app.get("/api/config")
+    def get_config() -> dict:
+        # 화면이 기본 목표가·작업 상한을 따로 하드코딩하지 않도록 백엔드 값을 내려준다.
+        return {"default_targets_krw": DEFAULT_TARGETS_KRW, "max_jobs": MAX_JOBS}
 
     def find(scan_id: str) -> Scan:
         if scan_id not in scans:

@@ -136,6 +136,12 @@ def test_second_scan_is_rejected_while_one_is_running():
         {"origin": "SEOUL"},  # IATA 형식이 아니다
         {"days": MAX_JOBS + 1},  # 비용 가드
         {"destinations": []},
+        {"destinations": ["FUK"] * (MAX_JOBS + 1)},
+        {"destinations": ["FU1"]},
+        {"days": True},  # 엄격한 타입: bool·문자열 숫자·실수·시각을 받지 않는다
+        {"days": "1"},
+        {"target_price_krw": 1.5},
+        {"start": "2027-10-10"},  # 기준일로부터 330일 초과
     ],
 )
 def test_invalid_requests_are_rejected_before_running(change):
@@ -185,6 +191,20 @@ def test_thread_start_failure_releases_the_lock(monkeypatch):
         client.post("/api/scans", json=FIXTURE_REQUEST)
     monkeypatch.undo()
     assert client.post("/api/scans", json=FIXTURE_REQUEST).status_code == 202
+
+
+def test_results_do_not_expose_provider_usage():
+    row = {"status": "DONE", "usage": [{"secret": "x"}], "evaluation": {"deal_quality": 4.0, "usage": {"secret": "x"}}}
+    client = client_for(lambda jobs: [row])
+    scan_id = client.post("/api/scans", json=FIXTURE_REQUEST).json()["id"]
+    wait_until_finished(client, scan_id)
+    [public] = client.get(f"/api/scans/{scan_id}/results").json()["results"]
+    assert public == {"status": "DONE", "evaluation": {"deal_quality": 4.0}}
+
+
+def test_config_shares_defaults_with_the_web():
+    config = client_for(lambda jobs: []).get("/api/config").json()
+    assert config == {"default_targets_krw": {"FUK": 180_000, "NRT": 250_000}, "max_jobs": MAX_JOBS}
 
 
 def test_unknown_scan_is_not_found():
