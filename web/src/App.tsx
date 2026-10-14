@@ -18,8 +18,9 @@ type ResultRow = {
   evaluation_error?: string
 }
 
+type Config = { default_targets_krw: Record<string, number>; max_jobs: number }
+
 const POLL_MS = 2000
-const DEFAULT_DESTINATIONS = ['FUK', 'NRT']
 
 const ACTION_LABELS: Record<string, string> = {
   SEND_URGENT_ALERT: '추천',
@@ -39,6 +40,24 @@ function isoDateAfter(days: number): string {
   const date = new Date()
   date.setDate(date.getDate() + days)
   return date.toLocaleDateString('sv-SE') // YYYY-MM-DD (로컬 시간대)
+}
+
+// 목표가 대비 초과율. 음수면 목표가 이하다. 가격이 없으면 null.
+function overTargetRatio(row: ResultRow): number | null {
+  return row.selected ? row.selected.price_krw / row.job.target_price_krw - 1 : null
+}
+
+// 목표가 이하를 먼저, 그다음 목표가에 가까운 순으로 정렬한다. 가격이 없는 행은 맨 뒤.
+function byClosenessToTarget(a: ResultRow, b: ResultRow): number {
+  const ratioA = overTargetRatio(a)
+  const ratioB = overTargetRatio(b)
+  if (ratioA === null || ratioB === null) return ratioA === null ? (ratioB === null ? 0 : 1) : -1
+  return ratioA - ratioB
+}
+
+function formatRatio(ratio: number): string {
+  const percent = Math.round(Math.abs(ratio) * 100)
+  return ratio <= 0 ? `목표가 이하 (−${percent}%)` : `+${percent}%`
 }
 
 class ApiError extends Error {
@@ -62,8 +81,9 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export default function App() {
+  const [config, setConfig] = useState<Config | null>(null)
   const [origin, setOrigin] = useState('ICN')
-  const [destinations, setDestinations] = useState(DEFAULT_DESTINATIONS.join(' '))
+  const [destinations, setDestinations] = useState('FUK NRT')
   const [start, setStart] = useState(isoDateAfter(7))
   const [days, setDays] = useState(5)
   const [nights, setNights] = useState(3)
@@ -74,10 +94,20 @@ export default function App() {
 
   // 백엔드도 목적지를 dict로 중복 제거하므로 화면의 검색 건수와 맞춘다.
   const destinationCodes = [...new Set(destinations.toUpperCase().split(/[\s,]+/).filter(Boolean))]
-  const needsTargetPrice = destinationCodes.some((code) => !DEFAULT_DESTINATIONS.includes(code))
+  const defaultTargets = config?.default_targets_krw ?? {}
+  // 설정을 받기 전에는 판단하지 않는다(서버가 다시 검증한다).
+  const needsTargetPrice = config !== null && destinationCodes.some((code) => !(code in defaultTargets))
   // 결과를 받기 전까지는 done이어도 폴링을 계속한다(결과 조회가 한 번 실패해도 다시 시도).
   const isPolling = scan !== null && scan.status !== 'failed' && results === null
   const scanId = scan?.id
+
+  useEffect(() => {
+    requestJson<Config>('/api/config')
+      .then(setConfig)
+      .catch(() => {
+        // 설정이 없어도 검색은 가능하다. 안내 문구만 일반화된다.
+      })
+  }, [])
 
   useEffect(() => {
     if (!scanId || !isPolling) return
@@ -151,14 +181,20 @@ export default function App() {
         </label>
         <label>
           출발일 수
-          <input type="number" value={days} min={1} max={10} onChange={(e) => setDays(Number(e.target.value))} />
+          <input type="number" value={days} min={1} max={config?.max_jobs ?? 10} onChange={(e) => setDays(Number(e.target.value))} />
         </label>
         <label>
           박 수
           <input type="number" value={nights} min={1} max={30} onChange={(e) => setNights(Number(e.target.value))} />
         </label>
         <label>
-          목표가 (원){needsTargetPrice ? ' — FUK/NRT 외 노선은 필수' : ' — 비우면 FUK 180,000 / NRT 250,000'}
+          목표가 (원)
+          {needsTargetPrice
+            ? ` — ${Object.keys(defaultTargets).join('/')} 외 노선은 필수`
+            : config &&
+              ` — 비우면 ${Object.entries(defaultTargets)
+                .map(([code, price]) => `${code} ${price.toLocaleString()}`)
+                .join(' / ')}`}
           <input
             type="number"
             value={targetPrice}
@@ -169,7 +205,8 @@ export default function App() {
           />
         </label>
         <p className="muted">
-          검색 {days * destinationCodes.length}건 (최대 10건). 검색마다 유료 모델 API를 호출합니다.
+          검색 {days * destinationCodes.length}건 (최대 {config?.max_jobs ?? 10}건). 결과 페이지를 바로 확인하지 못했거나
+          목표가 이하인 표를 평가할 때 유료 모델 API를 호출합니다.
         </p>
         <button type="submit" disabled={isRunning}>
           {isRunning ? '검색 중…' : '검색'}
@@ -182,7 +219,7 @@ export default function App() {
           <h2>진행 상태</h2>
           <p>
             {scan.status === 'queued' && '대기 중'}
-            {scan.status === 'running' && `검색 중 — ${scan.job_count}건, 건당 최대 2분 걸릴 수 있습니다`}
+            {scan.status === 'running' && `검색 중 — ${scan.job_count}건`}
             {scan.status === 'done' && `완료 — ${scan.job_count}건`}
             {scan.status === 'failed' && <span className="error">실패 ({scan.error})</span>}
           </p>
@@ -200,42 +237,51 @@ export default function App() {
                 <th>상태</th>
                 <th>최저가</th>
                 <th>목표가</th>
+                <th>목표가 대비</th>
                 <th>판정</th>
                 <th>링크</th>
               </tr>
             </thead>
             <tbody>
-              {results.map((row) => (
-                <tr key={`${row.job.destination}-${row.job.departure_date}`}>
-                  <td>
-                    {row.job.origin} → {row.job.destination}
-                  </td>
-                  <td>
-                    {row.job.departure_date} ~ {row.job.return_date}
-                  </td>
-                  <td>
-                    {STATUS_LABELS[row.status] ?? row.status}
-                    {row.error && <span className="muted"> ({row.error})</span>}
-                  </td>
-                  <td>{row.selected ? `${row.selected.price_krw.toLocaleString()}원` : '—'}</td>
-                  <td>{row.job.target_price_krw.toLocaleString()}원</td>
-                  <td>
-                    {ACTION_LABELS[row.action] ?? row.action}
-                    {row.evaluation && <span className="muted"> ({row.evaluation.deal_quality.toFixed(1)}/5)</span>}
-                    {row.evaluation_error && <span className="muted"> (평가 실패)</span>}
-                  </td>
-                  <td>
-                    {row.selected && (
-                      <a href={row.selected.search_url} target="_blank" rel="noreferrer">
-                        Google Flights
-                      </a>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {[...results].sort(byClosenessToTarget).map((row) => {
+                const ratio = overTargetRatio(row)
+                return (
+                  <tr key={`${row.job.destination}-${row.job.departure_date}`}>
+                    <td>
+                      {row.job.origin} → {row.job.destination}
+                    </td>
+                    <td>
+                      {row.job.departure_date} ~ {row.job.return_date}
+                    </td>
+                    <td>
+                      {STATUS_LABELS[row.status] ?? row.status}
+                      {row.error && <span className="muted"> ({row.error})</span>}
+                    </td>
+                    <td>{row.selected ? `${row.selected.price_krw.toLocaleString()}원` : '—'}</td>
+                    <td>{row.job.target_price_krw.toLocaleString()}원</td>
+                    <td className={ratio !== null && ratio <= 0 ? 'good' : undefined}>
+                      {ratio === null ? '—' : formatRatio(ratio)}
+                    </td>
+                    <td>
+                      {ACTION_LABELS[row.action] ?? row.action}
+                      {row.evaluation && <span className="muted"> ({row.evaluation.deal_quality.toFixed(1)}/5)</span>}
+                      {row.evaluation_error && <span className="muted"> (평가 실패)</span>}
+                    </td>
+                    <td>
+                      {row.selected && (
+                        <a href={row.selected.search_url} target="_blank" rel="noreferrer">
+                          Google Flights
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
-          <p className="muted">실시간 운임은 변동됩니다. 예약 전 가격·수하물·일정을 다시 확인하세요.</p>
+          <p className="muted">
+            목표가 이하인 표를 먼저, 그다음 목표가에 가까운 순으로 정렬했습니다. 실시간 운임은 변동됩니다. 예약 전 가격·수하물·일정을 다시 확인하세요.
+          </p>
         </section>
       )}
     </main>

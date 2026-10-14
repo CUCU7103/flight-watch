@@ -4,6 +4,7 @@
   line-height: 1.5;
   --muted: #6b7280;
   --error: #dc2626;
+  --good: #15803d;
   --border: #d1d5db;
 }
 
@@ -73,4 +74,9 @@ section {
 
 .error {
   color: var(--error);
+}
+
+.good {
+  color: var(--good);
+  font-weight: 600;
 }
