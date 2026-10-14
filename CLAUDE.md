@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 저장소 구성
 
-- `backend/` — 실제 코드 전부. Python 3.12+, `uv` 기반(`uv.lock`). 모든 명령은 `backend/`에서 실행한다.
-- `web/` — 비어 있음(아직 미구현).
-- `backend/jev_ultrafast/` 는 `browser-use/jev-ultrafast`(MIT, `NOTICE` 참고)에서 가져온 업스트림 코드다. 스캐너(`src/flight_scanner/`)가 이를 라이브러리로 import 한다. 업스트림 데모(`jev` 스크립트, `static/`, `demo.py`)는 스캐너와 무관하다.
+- `backend/` — 스캐너와 FastAPI 서버. Python 3.12+, `uv` 기반(`uv.lock`). 백엔드 명령은 `backend/`에서 실행한다.
+- `web/` — Vite + React + TypeScript 화면(pnpm). 개발 서버가 `/api`를 `127.0.0.1:8000`으로 프록시한다.
+- `backend/jev_ultrafast/` 는 `browser-use/jev-ultrafast`(MIT, `NOTICE` 참고)에서 가져온 업스트림 코드다. 스캐너(`src/flight_scanner/`)가 이를 라이브러리로 import 한다. 업스트림 데모는 삭제했다.
 
 ## 명령어 (`backend/`에서)
 
@@ -14,8 +14,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync                                   # 의존성 설치 (dev 그룹 포함)
 uv run pytest                             # 전체 테스트
 uv run pytest tests/test_cli.py::test_name  # 단일 테스트
-uv run ruff check . && uv run ruff format --check .   # line-length 120, 규칙 E/F/I
+uv run ruff check .                       # line-length 120, 규칙 E/F/I (업스트림 파일은 ruff format 미적용 상태라 format --check는 실패한다)
 uv run mypy                               # src/flight_scanner 만 대상
+
+# 웹 API (알림 없음). FLIGHT_WATCH_FIXTURE를 주면 브라우저·유료 API 없이 fixture 재생
+uv run uvicorn flight_scanner.api:app --host 127.0.0.1
+FLIGHT_WATCH_FIXTURE=tests/fixtures/verified_roundtrip.json uv run uvicorn flight_scanner.api:app --host 127.0.0.1
 
 # 스캐너 (flight-scanner = flight_scanner.cli:main)
 uv run flight-scanner --plan-only                       # 작업 목록만 생성, 브라우저/API 미사용
@@ -25,7 +29,8 @@ uv run flight-scanner --dry-run                         # 실제 스캔 + Jev �
 
 - 실제 스캔에는 `TYPESAFE_API_KEY`와 Chrome이 필요하다(`.env.example` 참고, 비표준 경로는 `CHROME_PATH`). 결과는 `artifacts/scans/latest.json`에 원자적으로 쓰인다.
 - `tests/test_redis_integration.py`는 `REDIS_TEST_URL`(일회용 서버)이 있을 때만 실행된다. 키를 flush/열거하지 않는다.
-- `scripts/`의 `smoke.py`, `measure_flights.py`, `record_flights.py` 등은 유료 모델 API나 라이브 사이트를 쓰는 수동 도구이며 pytest에 포함되지 않는다.
+- `scripts/check_guards.py`는 로컬 브라우저(browser-harness 기본 데몬)가 필요한 수동 점검 도구이며 pytest에 포함되지 않는다.
+- 웹(`web/`에서): `pnpm dev`(http://localhost:5173), `pnpm build`(tsc 포함), `pnpm lint`(oxlint).
 - `--destination`이 FUK/NRT가 아니면 `--target-price`가 필수다(기본 목표가는 `models.DEFAULT_TARGETS_KRW`).
 
 ## 아키텍처 (`src/flight_scanner/`)
@@ -37,6 +42,7 @@ uv run flight-scanner --dry-run                         # 실제 스캔 + Jev �
 3. `extract.py` — 페이지 스냅샷에서 가격/일정을 **fail-closed**로 검증해 `FlightOption`을 만든다(검색 URL protobuf 파싱 포함). 검증 실패 시 옵션을 만들지 않는다(`INVALID_RESULT`).
 4. `evaluate.py` — TypeSafe System One(`/v1/systemone`)에 noul/score/choice 질문을 보내 `Evaluation`을 얻고, `route()`가 코드로 최종 액션(`SEND_URGENT_ALERT`/`SAVE_TO_DAILY_DIGEST`/`DISCARD`)을 결정한다. 모델은 조언만 하고 임계값·하드 룰(경유 8시간 이상, 공항 변경, 목표가 초과 → DISCARD)은 코드가 소유한다.
 5. `notify.py` — Redis 클레임(`flight_alert:<fingerprint>`)으로 동시 중복 전송을 막고 Slack 웹훅(`hooks.slack.com`만 허용)으로 보낸다. 상태: `SENT/DUPLICATE/DRY_RUN/FAILED/UNCERTAIN/DEFERRED/NOT_CONFIGURED`. Slack은 exactly-once가 없으므로 전송 후 불확실하면 클레임을 풀지 않고 `uncertain`으로 TTL 보관한다.
+6. `api.py` — 웹 진입점. `POST /api/scans` → 백그라운드 스레드에서 runner 실행 → `GET /api/scans/{id}`(상태)·`/results`(`process_results` 행 그대로). runner는 주입식(`live_runner` 또는 `fixture_runner`)이고 항상 `dry_run=True`라 웹에서는 알림을 보내지 않는다. `dedicated_browser()`가 전역 `os.environ`을 바꾸므로 스캔은 Lock으로 1건만 돌리고(409), 작업 수는 `MAX_JOBS`=10으로 제한한다. 상태는 메모리 보관이다.
 
 ## 설계 원칙 (변경 시 유지해야 함)
 
