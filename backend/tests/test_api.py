@@ -45,7 +45,8 @@ def test_fixture_scan_runs_end_to_end_without_sending_alerts(monkeypatch):
 
     started = client.post("/api/scans", json=FIXTURE_REQUEST)
     assert started.status_code == 202
-    assert started.json()["job_count"] == 1
+    # fixture는 즉시 끝나지만 응답은 항상 queued여야 프론트가 폴링을 시작한다.
+    assert (started.json()["status"], started.json()["job_count"]) == ("queued", 1)
     assert wait_until_finished(client, started.json()["id"])["status"] == "done"
 
     [row] = client.get(f"/api/scans/{started.json()['id']}/results").json()["results"]

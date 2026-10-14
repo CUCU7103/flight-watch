@@ -114,8 +114,10 @@ def create_app(runner: Runner, *, requires_api_key: bool) -> FastAPI:
             raise HTTPException(409, "이미 실행 중인 검색이 있습니다")
         scan = Scan(uuid.uuid4().hex, jobs)
         scans[scan.id] = scan
+        # 스레드 시작 전에 응답을 만들어야 항상 queued로 돌려준다(빠른 runner는 응답 전에 끝날 수 있다).
+        response = {**scan.summary(), "jobs": [asdict(job) for job in jobs]}
         threading.Thread(target=execute, args=(scan,), daemon=True).start()
-        return {**scan.summary(), "jobs": [asdict(job) for job in jobs]}
+        return response
 
     def find(scan_id: str) -> Scan:
         if scan_id not in scans:
