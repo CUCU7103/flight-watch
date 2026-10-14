@@ -1,3 +1,4 @@
+import os
 from datetime import date
 
 import pytest
@@ -91,8 +92,6 @@ def test_browser_context_pins_model_and_cleans_only_owned_processes(tmp_path, mo
     import os
     from pathlib import Path
 
-    from browser_harness import admin
-
     from flight_scanner import browser
 
     chrome = tmp_path / "fake-chrome"
@@ -132,7 +131,7 @@ def test_browser_context_pins_model_and_cleans_only_owned_processes(tmp_path, mo
         return process
 
     monkeypatch.setattr(browser.subprocess, "Popen", launch)
-    monkeypatch.setattr(admin, "require_existing_daemon", lambda name: None)
+    monkeypatch.setattr(browser, "_daemon_ready", lambda name: True)
     with browser.dedicated_browser():
         model = os.environ.get("TYPESAFE_MODEL")
         assert model == "jev-1.13.0"
@@ -147,6 +146,18 @@ def test_browser_context_pins_model_and_cleans_only_owned_processes(tmp_path, mo
     cloud_id = os.environ.get("BU_BROWSER_ID")
     assert cloud_id == "existing-other-cloud-browser"
     assert len(processes) == 2 and all(process.stopped for process in processes)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("FLIGHT_WATCH_CHROME_TEST"), reason="실제 headless Chrome이 필요하다: FLIGHT_WATCH_CHROME_TEST=1"
+)
+def test_dedicated_browser_can_reopen_in_the_same_process():
+    # 웹 API는 한 프로세스에서 검색마다 컨텍스트를 새로 연다. 두 번째 컨텍스트도 데몬을 찾아야 한다.
+    from flight_scanner import browser
+
+    for _ in range(2):
+        with browser.dedicated_browser():
+            assert os.environ["BU_NAME"].startswith("flight_scanner_")
 
 
 def test_autocomplete_waits_for_matching_observed_airport_without_retyping(monkeypatch):

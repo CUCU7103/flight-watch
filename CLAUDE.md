@@ -29,6 +29,7 @@ uv run flight-scanner --dry-run                         # 실제 스캔 + Jev �
 
 - 실제 스캔에는 `TYPESAFE_API_KEY`와 Chrome이 필요하다(`.env.example` 참고, 비표준 경로는 `CHROME_PATH`). 결과는 `artifacts/scans/latest.json`에 원자적으로 쓰인다.
 - `tests/test_redis_integration.py`는 `REDIS_TEST_URL`(일회용 서버)이 있을 때만 실행된다. 키를 flush/열거하지 않는다.
+- `FLIGHT_WATCH_CHROME_TEST=1`이면 실제 headless Chrome으로 `dedicated_browser()` 재진입 테스트를 돌린다(임시 프로필, 외부 사이트·유료 API 없음). browser_harness는 import 시점에 `BH_*` 경로를 고정하므로 같은 프로세스에서 harness 모듈을 직접 import해 데몬을 확인하면 안 된다(`browser._daemon_ready` 참고).
 - `scripts/check_guards.py`는 로컬 브라우저(browser-harness 기본 데몬)가 필요한 수동 점검 도구이며 pytest에 포함되지 않는다.
 - 웹(`web/`에서): `pnpm dev`(http://localhost:5173), `pnpm build`(tsc 포함), `pnpm lint`(oxlint).
 - `--destination`이 FUK/NRT가 아니면 `--target-price`가 필수다(기본 목표가는 `models.DEFAULT_TARGETS_KRW`).

@@ -220,6 +220,23 @@ def scan(job: ScanJob) -> ScanResult:
         child.close()
 
 
+def _daemon_ready(name: str) -> bool:
+    # browser_harness._ipc는 import 시점의 BH_RUNTIME_DIR로 소켓 경로를 고정한다. 한 프로세스(웹 API)에서
+    # 컨텍스트를 다시 열면 이미 지워진 첫 폴더를 보게 되므로, 현재 환경변수로 새로 import하는 자식에서 확인한다.
+    check = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from browser_harness.admin import require_existing_daemon as ready; ready(sys.argv[1])",
+            name,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    )
+    return check.returncode == 0
+
+
 @contextmanager
 def dedicated_browser():
     """Own every process/profile in this context; never attach to the user's Chrome."""
@@ -284,17 +301,11 @@ def dedicated_browser():
             daemon = subprocess.Popen(
                 [sys.executable, "-m", "browser_harness.daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            from browser_harness.admin import require_existing_daemon
-
             deadline = time.monotonic() + 15
-            while True:
-                try:
-                    require_existing_daemon(os.environ["BU_NAME"])
-                    break
-                except RuntimeError:
-                    if daemon.poll() is not None or time.monotonic() > deadline:
-                        raise RuntimeError("Dedicated browser harness did not start") from None
-                    time.sleep(0.1)
+            while not _daemon_ready(os.environ["BU_NAME"]):
+                if daemon.poll() is not None or time.monotonic() > deadline:
+                    raise RuntimeError("Dedicated browser harness did not start")
+                time.sleep(0.1)
             yield
         finally:
             for process in (daemon, browser):
