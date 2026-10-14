@@ -2,6 +2,7 @@
 
 import threading
 import time
+from contextlib import nullcontext
 from datetime import date
 from pathlib import Path
 
@@ -10,18 +11,20 @@ import pytest
 import redis
 from fastapi.testclient import TestClient
 
-from flight_scanner import cli
+from flight_scanner import api
 from flight_scanner.api import MAX_JOBS, create_app, fixture_runner
+from flight_scanner.models import Evaluation, ScanResult
 
 FIXTURE = Path(__file__).parent / "fixtures/verified_roundtrip.json"
 # fixture가 담은 작업: ICN → FUK, 2026-11-12 ~ 2026-11-15, 목표가 180,000원.
 FIXTURE_REQUEST = {"origin": "icn", "destinations": ["fuk"], "start": "2026-11-12", "days": 1, "nights": 3}
+# fixture 출발일이 지나도 테스트가 skip되지 않도록 "오늘"을 고정한다.
+TODAY = date(2026, 10, 14)
 
 
-@pytest.fixture(autouse=True)
-def future_fixture_date():
-    if date.fromisoformat(FIXTURE_REQUEST["start"]) <= date.today():
-        pytest.skip("fixture 출발일이 지나 generate_jobs가 거부한다")
+def client_for(runner, *, requires_api_key=False) -> TestClient:
+    app = create_app(runner, requires_api_key=requires_api_key, today=TODAY)
+    return TestClient(app, base_url="http://localhost")
 
 
 def wait_until_finished(client: TestClient, scan_id: str) -> dict:
@@ -34,25 +37,36 @@ def wait_until_finished(client: TestClient, scan_id: str) -> dict:
     raise AssertionError("scan did not finish")
 
 
-def test_fixture_scan_runs_end_to_end_without_sending_alerts(monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("웹 MVP는 유료 평가·Slack·Redis를 쓰지 않는다")
-
-    monkeypatch.setattr(cli, "evaluate", forbidden)
-    monkeypatch.setattr(httpx, "post", forbidden)
-    monkeypatch.setattr(redis.Redis, "from_url", forbidden)
-    client = TestClient(create_app(fixture_runner(FIXTURE), requires_api_key=False))
+def test_fixture_scan_runs_end_to_end():
+    client = client_for(fixture_runner(FIXTURE))
 
     started = client.post("/api/scans", json=FIXTURE_REQUEST)
     assert started.status_code == 202
     # fixture는 즉시 끝나지만 응답은 항상 queued여야 프론트가 폴링을 시작한다.
     assert (started.json()["status"], started.json()["job_count"]) == ("queued", 1)
-    assert wait_until_finished(client, started.json()["id"])["status"] == "done"
+    scan = wait_until_finished(client, started.json()["id"])
+    assert scan["status"] == "done" and scan["finished_at"]
 
     [row] = client.get(f"/api/scans/{started.json()['id']}/results").json()["results"]
     assert row["selected"]["price_krw"] == 175_000
     assert row["action"] == "SEND_URGENT_ALERT"
     assert row["notification"] == "DRY_RUN"
+
+
+def test_live_runner_never_sends_slack_or_touches_redis(monkeypatch, option):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("웹 경로는 Slack·Redis를 쓰지 않는다")
+
+    evaluation = Evaluation(0.95, 0.05, 4.5, "SEND_URGENT_ALERT")
+    monkeypatch.setattr(api, "dedicated_browser", nullcontext)
+    monkeypatch.setattr(api, "run_jobs", lambda jobs, workers: [ScanResult(job, "DONE", [option]) for job in jobs])
+    monkeypatch.setattr("flight_scanner.cli.evaluate", lambda option: evaluation)
+    monkeypatch.setattr(httpx, "post", forbidden)
+    monkeypatch.setattr(redis.Redis, "from_url", forbidden)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/T/B/X")
+
+    [row] = api.live_runner([option.job])
+    assert (row["action"], row["notification"]) == ("SEND_URGENT_ALERT", "DRY_RUN")
 
 
 def test_second_scan_is_rejected_while_one_is_running():
@@ -62,7 +76,7 @@ def test_second_scan_is_rejected_while_one_is_running():
         release.wait(5)
         return []
 
-    client = TestClient(create_app(blocking_runner, requires_api_key=False))
+    client = client_for(blocking_runner)
     first = client.post("/api/scans", json=FIXTURE_REQUEST)
     assert client.post("/api/scans", json=FIXTURE_REQUEST).status_code == 409
     release.set()
@@ -74,6 +88,9 @@ def test_second_scan_is_rejected_while_one_is_running():
     "change",
     [
         {"destinations": ["KIX"]},  # FUK/NRT 외 노선인데 목표가가 없다
+        {"destinations": ["KIX"], "target_price_krw": 0},
+        {"target_price_krw": 0},  # 0을 기본 목표가로 바꿔치기하지 않는다
+        {"target_price_krw": -1},
         {"start": "2020-01-01"},  # 과거 출발일
         {"nights": 0},
         {"origin": "FUK"},  # 출발지와 도착지가 같다
@@ -84,14 +101,23 @@ def test_second_scan_is_rejected_while_one_is_running():
 )
 def test_invalid_requests_are_rejected_before_running(change):
     calls = []
-    client = TestClient(create_app(lambda jobs: calls.append(jobs) or [], requires_api_key=False))
+    client = client_for(lambda jobs: calls.append(jobs) or [])
     assert client.post("/api/scans", json={**FIXTURE_REQUEST, **change}).status_code == 422
+    assert calls == []
+
+
+def test_foreign_host_header_is_rejected():
+    # DNS rebinding으로 외부 페이지가 loopback 서버를 호출하는 경로를 막는다.
+    calls = []
+    client = client_for(lambda jobs: calls.append(jobs) or [])
+    response = client.post("/api/scans", json=FIXTURE_REQUEST, headers={"Host": "attacker.example:8000"})
+    assert response.status_code == 400
     assert calls == []
 
 
 def test_live_scan_requires_api_key(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    client = TestClient(create_app(lambda jobs: [], requires_api_key=True))
+    client = client_for(lambda jobs: [], requires_api_key=True)
     assert client.post("/api/scans", json=FIXTURE_REQUEST).status_code == 503
 
 
@@ -99,14 +125,30 @@ def test_runner_failure_is_recorded_by_type_only():
     def failing_runner(jobs):
         raise RuntimeError("provider body with secret")
 
-    client = TestClient(create_app(failing_runner, requires_api_key=False))
+    client = client_for(failing_runner)
     scan = wait_until_finished(client, client.post("/api/scans", json=FIXTURE_REQUEST).json()["id"])
     assert (scan["status"], scan["error"]) == ("failed", "RuntimeError")
-    # 실패 뒤에도 잠금이 풀려 다음 검색을 받을 수 있다.
+    # 종료 상태가 보이는 시점에는 잠금이 이미 풀려 있어야 한다.
+    assert client.post("/api/scans", json=FIXTURE_REQUEST).status_code == 202
+
+
+def test_thread_start_failure_releases_the_lock(monkeypatch):
+    class BrokenThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    client = client_for(lambda jobs: [])
+    monkeypatch.setattr(api.threading, "Thread", BrokenThread)
+    with pytest.raises(RuntimeError):
+        client.post("/api/scans", json=FIXTURE_REQUEST)
+    monkeypatch.undo()
     assert client.post("/api/scans", json=FIXTURE_REQUEST).status_code == 202
 
 
 def test_unknown_scan_is_not_found():
-    client = TestClient(create_app(lambda jobs: [], requires_api_key=False))
+    client = client_for(lambda jobs: [])
     assert client.get("/api/scans/missing").status_code == 404
     assert client.get("/api/scans/missing/results").status_code == 404

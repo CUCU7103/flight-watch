@@ -16,7 +16,7 @@
 
 - [uv](https://docs.astral.sh/uv/), Node.js 24, pnpm
 - Google Chrome. 표준 위치가 아니면 `CHROME_PATH`를 지정합니다.
-- 실검색에는 `TYPESAFE_API_KEY`가 필요합니다. `backend/.env.example`을 참고하세요.
+- 실검색에는 `TYPESAFE_API_KEY` 환경변수가 필요합니다. 서버는 `.env` 파일을 자동으로 읽지 않습니다. 셸에서 export하거나, `backend/.env.example`을 복사해 `backend/.env`를 만든 뒤 `uv run --env-file .env uvicorn ...`으로 실행하세요.
 
 ```bash
 (cd backend && uv sync)
@@ -46,7 +46,7 @@ cd backend
 FLIGHT_WATCH_FIXTURE=tests/fixtures/verified_roundtrip.json uv run uvicorn flight_scanner.api:app --host 127.0.0.1
 ```
 
-fixture는 ICN → FUK, 2026-11-12 출발, 3박, 출발일 수 1로 저장돼 있습니다. 폼에도 같은 값을 넣어야 결과가 나옵니다. 다른 값을 넣으면 검증 실패로 표시됩니다.
+fixture는 ICN → FUK, 2026-11-12 출발, 3박, 출발일 수 1로 저장돼 있습니다. 폼에도 같은 값을 넣어야 결과가 나옵니다. 다른 값을 넣으면 검증 실패로 표시됩니다. fixture 모드는 출발일 검증 기준일을 fixture 출발 전날로 고정하므로, 이 날짜가 지나도 재생할 수 있습니다.
 
 ## 비용과 제한
 

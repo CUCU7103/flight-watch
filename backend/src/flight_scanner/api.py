@@ -6,10 +6,11 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 from .browser import dedicated_browser
@@ -32,7 +33,7 @@ class ScanRequest(BaseModel):
     start: date
     days: int = 5
     nights: int = 3
-    target_price_krw: int | None = None
+    target_price_krw: int | None = Field(default=None, gt=0)
 
 
 @dataclass
@@ -76,34 +77,44 @@ def fixture_runner(path: Path) -> Runner:
     return run
 
 
-def create_app(runner: Runner, *, requires_api_key: bool) -> FastAPI:
+def create_app(runner: Runner, *, requires_api_key: bool, today: date | None = None) -> FastAPI:
+    """today는 출발일 검증 기준일이다. None이면 요청 시점의 오늘을 쓴다(fixture 재생·테스트용 고정값)."""
     app = FastAPI(title="flight-watch")
+    # 인증이 없으므로 loopback 이름만 받아 DNS rebinding으로 외부 페이지가 호출하는 경로를 막는다.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     # ponytail: 메모리 보관이라 재시작하면 사라지고 계속 쌓인다. 이력이 필요해지면 SQLite로 옮긴다.
     scans: dict[str, Scan] = {}
     # dedicated_browser()가 프로세스 전역 os.environ을 바꾸므로 스캔은 동시에 1건만 돌린다.
     busy = threading.Lock()
 
     def execute(scan: Scan) -> None:
+        results: list[dict] = []
+        status, error = "done", None
         try:
             scan.status = "running"
-            scan.results = runner(scan.jobs)
-            scan.status = "done"
+            results = runner(scan.jobs)
         except Exception as exc:
             # 공급자 응답 본문이나 자격증명이 남지 않도록 예외 타입명만 기록한다.
-            scan.status, scan.error = "failed", type(exc).__name__
+            status, error = "failed", type(exc).__name__
         finally:
+            scan.results, scan.error = results, error
             scan.finished_at = datetime.now(timezone.utc).isoformat()
+            # 잠금을 먼저 풀고 종료 상태를 공개해야, 종료를 본 클라이언트의 다음 요청이 409를 받지 않는다.
             busy.release()
+            scan.status = status
 
     @app.post("/api/scans", status_code=202)
     def start_scan(request: ScanRequest) -> dict:
         origin = request.origin.upper()
         destinations = [code.upper() for code in request.destinations]
-        if request.target_price_krw is None and not set(destinations) <= set(DEFAULT_TARGETS_KRW):
+        price = request.target_price_krw
+        if price is None and not set(destinations) <= set(DEFAULT_TARGETS_KRW):
             raise HTTPException(422, "FUK/NRT 외 노선은 target_price_krw가 필요합니다")
-        targets = {dest: request.target_price_krw or DEFAULT_TARGETS_KRW[dest] for dest in destinations}
+        targets = {dest: price if price is not None else DEFAULT_TARGETS_KRW[dest] for dest in destinations}
         try:
-            jobs = generate_jobs(request.start, request.days, request.nights, origin=origin, destinations=targets)
+            jobs = generate_jobs(
+                request.start, request.days, request.nights, origin=origin, destinations=targets, today=today
+            )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         if len(jobs) > MAX_JOBS:
@@ -113,10 +124,16 @@ def create_app(runner: Runner, *, requires_api_key: bool) -> FastAPI:
         if not busy.acquire(blocking=False):
             raise HTTPException(409, "이미 실행 중인 검색이 있습니다")
         scan = Scan(uuid.uuid4().hex, jobs)
-        scans[scan.id] = scan
-        # 스레드 시작 전에 응답을 만들어야 항상 queued로 돌려준다(빠른 runner는 응답 전에 끝날 수 있다).
-        response = {**scan.summary(), "jobs": [asdict(job) for job in jobs]}
-        threading.Thread(target=execute, args=(scan,), daemon=True).start()
+        try:
+            scans[scan.id] = scan
+            # 스레드 시작 전에 응답을 만들어야 항상 queued로 돌려준다(빠른 runner는 응답 전에 끝날 수 있다).
+            response = {**scan.summary(), "jobs": [asdict(job) for job in jobs]}
+            threading.Thread(target=execute, args=(scan,), daemon=True).start()
+        except BaseException:
+            # 스레드가 시작되지 않으면 execute()가 잠금을 풀지 못하므로 여기서 되돌린다.
+            scans.pop(scan.id, None)
+            busy.release()
+            raise
         return response
 
     def find(scan_id: str) -> Scan:
@@ -140,7 +157,9 @@ def _default_app() -> FastAPI:
     # 개발·E2E 확인용: 경로를 주면 브라우저와 유료 API 없이 fixture를 재생한다.
     fixture = os.environ.get("FLIGHT_WATCH_FIXTURE")
     if fixture:
-        return create_app(fixture_runner(Path(fixture)), requires_api_key=False)
+        # 저장된 출발일이 지나도 재생할 수 있도록 기준일을 출발 전날로 고정한다.
+        departure = date.fromisoformat(json.loads(Path(fixture).read_text())["job"]["departure_date"])
+        return create_app(fixture_runner(Path(fixture)), requires_api_key=False, today=departure - timedelta(days=1))
     return create_app(live_runner, requires_api_key=True)
 
 

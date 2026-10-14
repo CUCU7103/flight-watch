@@ -41,12 +41,22 @@ function isoDateAfter(days: number): string {
   return date.toLocaleDateString('sv-SE') // YYYY-MM-DD (로컬 시간대)
 }
 
+class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
     // HTTPException은 문자열 detail, 요청 형식 오류(pydantic)는 배열 detail을 준다.
-    throw new Error(typeof body.detail === 'string' ? body.detail : `요청이 거부되었습니다 (HTTP ${response.status})`)
+    const message = typeof body.detail === 'string' ? body.detail : body.detail?.[0]?.msg
+    throw new ApiError(message ?? `요청이 거부되었습니다 (HTTP ${response.status})`, response.status)
   }
   return body as T
 }
@@ -62,26 +72,41 @@ export default function App() {
   const [scan, setScan] = useState<ScanSummary | null>(null)
   const [results, setResults] = useState<ResultRow[] | null>(null)
 
-  const destinationCodes = destinations.toUpperCase().split(/[\s,]+/).filter(Boolean)
+  // 백엔드도 목적지를 dict로 중복 제거하므로 화면의 검색 건수와 맞춘다.
+  const destinationCodes = [...new Set(destinations.toUpperCase().split(/[\s,]+/).filter(Boolean))]
   const needsTargetPrice = destinationCodes.some((code) => !DEFAULT_DESTINATIONS.includes(code))
-  const isRunning = scan?.status === 'queued' || scan?.status === 'running'
+  // 결과를 받기 전까지는 done이어도 폴링을 계속한다(결과 조회가 한 번 실패해도 다시 시도).
+  const isPolling = scan !== null && scan.status !== 'failed' && results === null
+  const scanId = scan?.id
 
   useEffect(() => {
-    if (!scan || !isRunning) return
+    if (!scanId || !isPolling) return
+    let cancelled = false
     const timer = setInterval(async () => {
       try {
-        const next = await requestJson<ScanSummary>(`/api/scans/${scan.id}`)
-        setScan(next)
+        const next = await requestJson<ScanSummary>(`/api/scans/${scanId}`)
         if (next.status === 'done') {
-          const body = await requestJson<{ results: ResultRow[] }>(`/api/scans/${scan.id}/results`)
+          const body = await requestJson<{ results: ResultRow[] }>(`/api/scans/${scanId}/results`)
+          if (cancelled) return
           setResults(body.results)
         }
-      } catch {
-        // 일시적인 연결 오류는 다음 폴링에서 다시 시도한다.
+        if (!cancelled) setScan(next)
+      } catch (error) {
+        if (cancelled) return
+        if (error instanceof ApiError && error.status === 404) {
+          // 서버가 재시작되면 메모리의 검색 기록이 사라진다. 폴링을 멈추고 새 검색을 받을 수 있게 한다.
+          setScan((current) => current && { ...current, status: 'failed', error: '서버가 다시 시작되어 검색 기록이 사라졌습니다' })
+        }
+        // 그 밖의 일시적인 연결 오류는 다음 폴링에서 다시 시도한다.
       }
     }, POLL_MS)
-    return () => clearInterval(timer)
-  }, [scan, isRunning])
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [scanId, isPolling])
+
+  const isRunning = scan?.status === 'queued' || scan?.status === 'running'
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -122,7 +147,7 @@ export default function App() {
         </label>
         <label>
           첫 출발일
-          <input type="date" value={start} min={isoDateAfter(1)} onChange={(e) => setStart(e.target.value)} required />
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
         </label>
         <label>
           출발일 수
@@ -138,6 +163,7 @@ export default function App() {
             type="number"
             value={targetPrice}
             min={1}
+            step={1}
             required={needsTargetPrice}
             onChange={(e) => setTargetPrice(e.target.value)}
           />
