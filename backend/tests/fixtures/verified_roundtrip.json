@@ -1,0 +1,84 @@
+{
+  "fixture_kind": "synthetic-not-a-live-capture",
+  "job": {
+    "origin": "ICN",
+    "destination": "FUK",
+    "departure_date": "2026-11-12",
+    "return_date": "2026-11-15",
+    "target_price_krw": 180000
+  },
+  "page": {
+    "url": "https://www.google.com/travel/flights/search?curr=KRW&tfs=GhoSCjIwMjYtMTEtMTJqBRIDSUNOcgUSA0ZVSxoaEgoyMDI2LTExLTE1agUSA0ZVS3IFEgNJQ04QAkABSAE=",
+    "title": "Flights",
+    "text": "Calendar ₩70,000. From ₩90,000",
+    "actions": [
+      {
+        "id": "type",
+        "kind": "click",
+        "label": "Change ticket type. Round trip",
+        "value": "Round trip"
+      },
+      {
+        "id": "adults",
+        "kind": "click",
+        "label": "1 passenger",
+        "value": ""
+      },
+      {
+        "id": "cabin",
+        "kind": "click",
+        "label": "Change cabin class. Economy",
+        "value": "Economy"
+      },
+      {
+        "id": "flight1",
+        "kind": "click",
+        "node": 10,
+        "label": "Select flight. ICN -> FUK 2026-11-12. ₩175,000 round trip"
+      }
+    ],
+    "guards": {
+      "10": [
+        "Select flight. KRW 175000 round trip\nOutbound: ICN -> FUK 2026-11-12 Nonstop\nReturn: FUK -> ICN 2026-11-15 Nonstop\nBaggage: carry-on included; checked bag included."
+      ]
+    }
+  },
+  "evaluation": {
+    "model": "test",
+    "usage": {
+      "input_tokens": 20
+    },
+    "answers": {
+      "is_real_promo": {
+        "type": "noul",
+        "noul": 0.9
+      },
+      "has_hidden_trap": {
+        "type": "noul",
+        "noul": 0.1
+      },
+      "deal_quality": {
+        "type": "score",
+        "score": 2.5,
+        "confidence": 0.5,
+        "probabilities": {
+          "0": 0,
+          "1": 0,
+          "2": 0.5,
+          "3": 0.5,
+          "4": 0
+        }
+      },
+      "next_action": {
+        "type": "choice",
+        "choice": "SEND_URGENT_ALERT",
+        "confidence": 1,
+        "probabilities": {
+          "SEND_URGENT_ALERT": 1,
+          "SAVE_TO_DAILY_DIGEST": 0,
+          "DISCARD": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+이 프로젝트의 backend/jev_ultrafast 와 스캐너의 기반 코드는
+browser-use/jev-ultrafast (https://github.com/browser-use/jev-ultrafast)
+원본 commit 1231850a0bf1a0c0341fe408ef1668dbbfdfac46 에서 가져왔으며 MIT 라이선스를 따릅니다.
+라이선스 전문은 backend/LICENSE 를 참고하세요.
