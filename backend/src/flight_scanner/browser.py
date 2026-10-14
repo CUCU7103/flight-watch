@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .extract import extract_options, search_url
-from .models import DEFAULT_MODEL, FlightOption, ScanJob, ScanResult
+from .models import DEFAULT_MODEL, FLIGHTS_URL, FlightOption, ScanJob, ScanResult
 
 JOB_TIMEOUT = 120
 MAX_STEPS = 50
@@ -57,6 +57,25 @@ def settle_autocomplete(browser, page: dict, value: str) -> dict:
         time.sleep(0.1)
         page = browser.observe(screenshot=False)
     return page
+
+
+def open_search_form(browser) -> dict:
+    """직접 경로가 실패하면 같은 탭을 빈 검색 폼으로 옮긴다.
+
+    이미 채워진 결과 페이지에서 시작하면 에이전트가 입력할 값이 없어 막히므로, 원래 흐름을 처음부터 돌린다.
+    """
+    from jev_ultrafast.browser import StalePage
+
+    browser.call("Page.navigate", url=FLIGHTS_URL)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        try:
+            if browser.evaluate("location.pathname === '/travel/flights' && document.readyState === 'complete'"):
+                break
+        except StalePage:
+            pass  # 이동 중에는 문서가 바뀌어 평가가 실패할 수 있다.
+        time.sleep(0.05)
+    return browser.observe(screenshot=False)
 
 
 def validate_action(job: ScanJob, page: dict, decision: dict) -> dict | None:
@@ -119,6 +138,7 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
                     if status:
                         result.status, result.options = status, options
                         break
+                    agent.state["page"] = open_search_form(agent.browser)
                 if time.monotonic() - started >= JOB_TIMEOUT:
                     result.status = "TIMEOUT"
                     break
@@ -254,7 +274,7 @@ def scan(job: ScanJob) -> ScanResult:
         child.close()
 
 
-def _daemon_ready(name: str) -> bool:
+def daemon_ready(name: str) -> bool:
     # browser_harness._ipc는 import 시점의 BH_RUNTIME_DIR로 소켓 경로를 고정한다. 한 프로세스(웹 API)에서
     # 컨텍스트를 다시 열면 이미 지워진 첫 폴더를 보게 되므로, 현재 환경변수로 새로 import하는 자식에서 확인한다.
     check = subprocess.run(
@@ -336,7 +356,7 @@ def dedicated_browser():
                 [sys.executable, "-m", "browser_harness.daemon"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             deadline = time.monotonic() + 15
-            while not _daemon_ready(os.environ["BU_NAME"]):
+            while not daemon_ready(os.environ["BU_NAME"]):
                 if daemon.poll() is not None or time.monotonic() > deadline:
                     raise RuntimeError("Dedicated browser harness did not start")
                 time.sleep(0.1)

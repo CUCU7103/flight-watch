@@ -16,3 +16,4 @@ dist/
 !.env.example
 .omc/
 node_modules/
+.omx/

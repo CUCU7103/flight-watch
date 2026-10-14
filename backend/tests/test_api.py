@@ -2,7 +2,7 @@
 
 import threading
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from datetime import date
 from pathlib import Path
 
@@ -58,15 +58,54 @@ def test_live_runner_never_sends_slack_or_touches_redis(monkeypatch, option):
         raise AssertionError("웹 경로는 Slack·Redis를 쓰지 않는다")
 
     evaluation = Evaluation(0.95, 0.05, 4.5, "SEND_URGENT_ALERT")
-    monkeypatch.setattr(api, "dedicated_browser", nullcontext)
     monkeypatch.setattr(api, "run_jobs", lambda jobs, workers: [ScanResult(job, "DONE", [option]) for job in jobs])
     monkeypatch.setattr("flight_scanner.cli.evaluate", lambda option: evaluation)
     monkeypatch.setattr(httpx, "post", forbidden)
     monkeypatch.setattr(redis.Redis, "from_url", forbidden)
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/T/B/X")
 
-    [row] = api.live_runner([option.job])
+    [row] = api.live_runner(api.WarmBrowser(open_browser=nullcontext))([option.job])
     assert (row["action"], row["notification"]) == ("SEND_URGENT_ALERT", "DRY_RUN")
+
+
+class FakeBrowserContext:
+    """dedicated_browser() 대신 열고 닫힌 횟수를 센다."""
+
+    def __init__(self):
+        self.opened = self.closed = 0
+
+    @contextmanager
+    def open(self):
+        self.opened += 1
+        try:
+            yield
+        finally:
+            self.closed += 1
+
+
+@pytest.mark.parametrize("alive,expected_opens", [(True, 1), (False, 2)])
+def test_warm_browser_reuses_a_live_browser_and_reopens_a_dead_one(monkeypatch, alive, expected_opens):
+    fake = FakeBrowserContext()
+    monkeypatch.setattr(api, "daemon_ready", lambda name: alive)
+    browser = api.WarmBrowser(open_browser=fake.open)
+    browser.ensure()
+    browser.ensure()
+    assert (fake.opened, fake.closed) == (expected_opens, expected_opens - 1)
+    browser.close()
+    assert fake.closed == fake.opened
+
+
+def test_server_shutdown_closes_the_warm_browser(monkeypatch):
+    fake = FakeBrowserContext()
+    monkeypatch.setattr(api, "daemon_ready", lambda name: True)
+    browser = api.WarmBrowser(open_browser=fake.open)
+    app = create_app(
+        lambda jobs: browser.ensure() or [], requires_api_key=False, today=TODAY, on_shutdown=browser.close
+    )
+    with TestClient(app, base_url="http://localhost") as client:
+        wait_until_finished(client, client.post("/api/scans", json=FIXTURE_REQUEST).json()["id"])
+        assert (fake.opened, fake.closed) == (1, 0)  # 검색이 끝나도 열어 둔다
+    assert fake.closed == 1  # 서버 종료(lifespan) 때 정리한다
 
 
 def test_second_scan_is_rejected_while_one_is_running():

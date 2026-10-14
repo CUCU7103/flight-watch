@@ -4,7 +4,8 @@ import json
 import os
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
-from .browser import dedicated_browser
+from .browser import daemon_ready, dedicated_browser
 from .cli import process_results, run_jobs
 from .evaluate import parse_evaluation
 from .extract import extract_options
@@ -57,9 +58,36 @@ class Scan:
         }
 
 
-def live_runner(jobs: list[ScanJob]) -> list[dict]:
-    with dedicated_browser():
+class WarmBrowser:
+    """전용 Chrome을 검색 사이에 열어 두어 검색마다 드는 기동 시간(약 2초)을 없앤다.
+
+    검색 전에 데몬·Chrome 상태를 확인해 죽었으면 다시 열고, 서버가 종료될 때 close()로 정리한다.
+    """
+
+    def __init__(self, open_browser: Callable[[], AbstractContextManager] = dedicated_browser) -> None:
+        self._open_browser = open_browser
+        self._stack: ExitStack | None = None
+
+    def ensure(self) -> None:
+        if self._stack is not None and daemon_ready(os.environ.get("BU_NAME", "")):
+            return
+        self.close()
+        stack = ExitStack()
+        stack.enter_context(self._open_browser())
+        self._stack = stack
+
+    def close(self) -> None:
+        if self._stack is not None:
+            stack, self._stack = self._stack, None
+            stack.close()
+
+
+def live_runner(browser: WarmBrowser) -> Runner:
+    def run(jobs: list[ScanJob]) -> list[dict]:
+        browser.ensure()
         return process_results(run_jobs(jobs, WORKERS), dry_run=True)
+
+    return run
 
 
 def fixture_runner(path: Path) -> Runner:
@@ -77,9 +105,25 @@ def fixture_runner(path: Path) -> Runner:
     return run
 
 
-def create_app(runner: Runner, *, requires_api_key: bool, today: date | None = None) -> FastAPI:
-    """today는 출발일 검증 기준일이다. None이면 요청 시점의 오늘을 쓴다(fixture 재생·테스트용 고정값)."""
-    app = FastAPI(title="flight-watch")
+def create_app(
+    runner: Runner,
+    *,
+    requires_api_key: bool,
+    today: date | None = None,
+    on_shutdown: Callable[[], None] | None = None,
+) -> FastAPI:
+    """today는 출발일 검증 기준일이다. None이면 요청 시점의 오늘을 쓴다(fixture 재생·테스트용 고정값).
+
+    on_shutdown은 서버 종료 시 호출된다(열어 둔 Chrome 정리).
+    """
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        if on_shutdown is not None:
+            on_shutdown()
+
+    app = FastAPI(title="flight-watch", lifespan=lifespan)
     # 인증이 없으므로 loopback 이름만 받아 DNS rebinding으로 외부 페이지가 호출하는 경로를 막는다.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     # ponytail: 메모리 보관이라 재시작하면 사라지고 계속 쌓인다. 이력이 필요해지면 SQLite로 옮긴다.
@@ -160,7 +204,8 @@ def _default_app() -> FastAPI:
         # 저장된 출발일이 지나도 재생할 수 있도록 기준일을 출발 전날로 고정한다.
         departure = date.fromisoformat(json.loads(Path(fixture).read_text())["job"]["departure_date"])
         return create_app(fixture_runner(Path(fixture)), requires_api_key=False, today=departure - timedelta(days=1))
-    return create_app(live_runner, requires_api_key=True)
+    browser = WarmBrowser()
+    return create_app(live_runner(browser), requires_api_key=True, on_shutdown=browser.close)
 
 
 app = _default_app()

@@ -133,7 +133,7 @@ def test_browser_context_pins_model_and_cleans_only_owned_processes(tmp_path, mo
         return process
 
     monkeypatch.setattr(browser.subprocess, "Popen", launch)
-    monkeypatch.setattr(browser, "_daemon_ready", lambda name: True)
+    monkeypatch.setattr(browser, "daemon_ready", lambda name: True)
     with browser.dedicated_browser():
         model = os.environ.get("TYPESAFE_MODEL")
         assert model == "jev-1.13.0"
@@ -294,11 +294,16 @@ def test_unverified_results_fall_back_to_the_agent(job, runner, monkeypatch):
     from flight_scanner.extract import search_url
     from tests.test_agent import decision
 
-    # 결과 URL이지만 카드·검색 조건을 확인할 수 없는 페이지(에이전트 루프용 필드는 갖춘 가짜 페이지)
-    page = {**runner.state["page"], "url": search_url(job)}
+    # 결과 URL이지만 카드·검색 조건을 확인할 수 없는 페이지
+    unverified = {**runner.state["page"], "url": search_url(job)}
+    # 빈 검색 폼(에이전트 루프용 필드는 갖춘 가짜 페이지)
+    form = {**runner.state["page"], "url": browser.FLIGHTS_URL}
     monkeypatch.setattr(browser, "DIRECT_RESULTS_TIMEOUT", 0)
     calls = []
     choose = lambda *a, **kw: calls.append(True) or decision("DONE")  # noqa: E731
-    result, _ = run_with(direct_runner(runner, job, [page]), monkeypatch, job, choose)
+    runner = direct_runner(runner, job, [unverified, form])
+    result, _ = run_with(runner, monkeypatch, job, choose)
+    # 이미 채워진 결과 페이지가 아니라 빈 검색 폼에서 원래의 에이전트 흐름을 처음부터 돌린다.
+    runner.browser.call.assert_any_call("Page.navigate", url=browser.FLIGHTS_URL)
     # 에이전트가 DONE을 말해도 결과는 독립적으로 검증되므로 INVALID_RESULT다.
     assert calls and result.status == "INVALID_RESULT"
