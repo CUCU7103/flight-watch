@@ -87,6 +87,10 @@ def open_search_form(browser) -> dict:
         except StalePage:
             pass  # 이동 중에는 문서가 바뀌어 평가·관측이 실패할 수 있다.
         if time.monotonic() >= deadline:
+            page = browser.observe(screenshot=False)
+            # 차단 페이지(/sorry/ 등)로 넘어갔으면 호출자가 BLOCKED로 분류하도록 그 페이지를 돌려준다.
+            if BLOCKED_PAGE.search(page.get("text", "")):
+                return page
             raise RuntimeError("Search form did not load")
         time.sleep(0.05)
 

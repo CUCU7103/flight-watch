@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import threading
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -50,8 +51,8 @@ class ScanRequest(BaseModel):
     @field_validator("start", mode="before")
     @classmethod
     def date_without_time(cls, value: object) -> object:
-        # lax 날짜 파싱은 "2026-11-12T00:00:00"도 받으므로 YYYY-MM-DD만 남긴다.
-        if isinstance(value, str) and len(value) != len("YYYY-MM-DD"):
+        # lax 날짜 파싱은 시각이 붙은 문자열·유닉스 타임스탬프도 받으므로 YYYY-MM-DD 문자열만 남긴다.
+        if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("start는 YYYY-MM-DD 형식이어야 합니다")
         return value
 
@@ -198,7 +199,8 @@ def create_app(
             jobs = generate_jobs(
                 request.start, request.days, request.nights, origin=origin, destinations=targets, today=today
             )
-        except ValueError as exc:
+        except (ValueError, OverflowError) as exc:
+            # OverflowError: 9999-12-31처럼 귀국일 계산이 날짜 범위를 넘는 경우
             raise HTTPException(422, str(exc)) from None
         # 출발일만 보면 일수·박 수만큼 범위 밖으로 나가므로 가장 늦은 귀국일로 판단한다.
         if max(job.return_date for job in jobs) > (today or date.today()) + timedelta(days=MAX_DAYS_AHEAD):

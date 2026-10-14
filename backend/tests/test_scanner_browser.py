@@ -356,3 +356,24 @@ def test_daemon_check_timeout_counts_as_not_ready(monkeypatch):
 
     monkeypatch.setattr(browser.subprocess, "run", hang)
     assert browser.daemon_ready("flight_scanner_test") is False
+
+
+def test_partial_results_seen_twice_are_not_treated_as_stable(job, runner, monkeypatch):
+    page = captured_page()
+    cards = [i for i, a in enumerate(page["actions"]) if "select flight" in a["label"].lower()]
+    partial = {**page, "actions": [a for i, a in enumerate(page["actions"]) if i not in cards[1:]]}
+    result, _ = run_with(direct_runner(runner, job, [partial, partial, page, page]), monkeypatch, job)
+    assert result.status == "DONE" and len(result.options) > 1
+
+
+def test_blocked_redirect_on_the_search_form_is_blocked(job, runner, monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.extract import search_url
+
+    monkeypatch.setattr(browser, "DIRECT_RESULTS_TIMEOUT", 0)
+    monkeypatch.setattr(browser, "SEARCH_FORM_TIMEOUT", 0)
+    sorry = {**runner.state["page"], "url": "https://www.google.com/sorry/index", "text": "unusual traffic"}
+    runner = direct_runner(runner, job, [{**runner.state["page"], "url": search_url(job)}, sorry])
+    runner.browser.evaluate.return_value = False  # 폼 경로(/travel/flights)에 도달하지 못한다
+    result, _ = run_with(runner, monkeypatch, job)
+    assert (result.status, result.model_calls) == ("BLOCKED", 0)
