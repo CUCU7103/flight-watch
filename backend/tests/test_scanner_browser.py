@@ -7,6 +7,7 @@ import pytest
 
 from flight_scanner.browser import validate_action
 from flight_scanner.models import ScanJob
+from jev_ultrafast.browser import StalePage
 
 
 @pytest.fixture
@@ -206,6 +207,7 @@ def test_real_loop_terminates_without_trusting_done(job, runner, monkeypatch, mo
         page["text"] = "Verify you are human"
     runner.browser = runner.state["browser"]
     runner.state["browser"].target = "owned-test-target"
+    runner.state["browser"].call.return_value = {}  # 빈 검색 폼으로 이동 성공
     runner.input_values = job.input_values()
     selection = "wait" if mode == "wait" else "DONE" if mode == "done" else "e1"
     result_decision = decision(selection)
@@ -242,6 +244,7 @@ def direct_runner(runner, job, pages):
     runner.state["page"] = pages[0]
     runner.state["browser"].observe.side_effect = [*pages[1:], *[pages[-1]] * 50]
     runner.state["browser"].target = "owned-test-target"
+    runner.state["browser"].call.return_value = {}  # Page.navigate 성공 응답
     runner.browser = runner.state["browser"]
     runner.input_values = job.input_values()
     return runner
@@ -302,8 +305,54 @@ def test_unverified_results_fall_back_to_the_agent(job, runner, monkeypatch):
     calls = []
     choose = lambda *a, **kw: calls.append(True) or decision("DONE")  # noqa: E731
     runner = direct_runner(runner, job, [unverified, form])
+    # 이동 중에는 평가가 실패하거나 아직 준비되지 않았다가 준비된다.
+    runner.browser.evaluate.side_effect = [StalePage("navigating"), False, True]
     result, _ = run_with(runner, monkeypatch, job, choose)
     # 이미 채워진 결과 페이지가 아니라 빈 검색 폼에서 원래의 에이전트 흐름을 처음부터 돌린다.
     runner.browser.call.assert_any_call("Page.navigate", url=browser.FLIGHTS_URL)
     # 에이전트가 DONE을 말해도 결과는 독립적으로 검증되므로 INVALID_RESULT다.
     assert calls and result.status == "INVALID_RESULT"
+
+
+def test_stale_observation_during_direct_wait_keeps_waiting(job, runner, monkeypatch):
+    page = captured_page()
+    runner = direct_runner(runner, job, [page, page])
+    runner.browser.observe.side_effect = [StalePage("rerender"), *[page] * 10]
+    result, _ = run_with(runner, monkeypatch, job)
+    assert (result.status, result.model_calls) == ("DONE", 0)
+
+
+def test_blocked_redirect_is_detected_before_leaving_the_results_page(job, runner, monkeypatch):
+    sorry = {**captured_page(), "url": "https://www.google.com/sorry/index", "text": "unusual traffic"}
+    runner = direct_runner(runner, job, [sorry])
+    result, _ = run_with(runner, monkeypatch, job)
+    assert result.status == "BLOCKED"
+    runner.browser.call.assert_not_called()  # 차단된 상태에서 Google에 다시 이동하지 않는다
+
+
+@pytest.mark.parametrize("failure", ["navigate_error", "never_ready"])
+def test_search_form_failure_ends_without_model_calls(job, runner, monkeypatch, failure):
+    from flight_scanner import browser
+    from flight_scanner.extract import search_url
+
+    monkeypatch.setattr(browser, "DIRECT_RESULTS_TIMEOUT", 0)
+    monkeypatch.setattr(browser, "SEARCH_FORM_TIMEOUT", 0)
+    runner = direct_runner(runner, job, [{**runner.state["page"], "url": search_url(job)}])
+    if failure == "navigate_error":
+        runner.browser.call.return_value = {"errorText": "net::ERR_ABORTED"}
+    else:
+        runner.browser.evaluate.return_value = False
+    result, _ = run_with(runner, monkeypatch, job)  # 모델을 부르면 forbidden_model이 실패시킨다
+    assert (result.status, result.error, result.model_calls) == ("ERROR", "RuntimeError", 0)
+
+
+def test_daemon_check_timeout_counts_as_not_ready(monkeypatch):
+    import subprocess
+
+    from flight_scanner import browser
+
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout"))
+
+    monkeypatch.setattr(browser.subprocess, "run", hang)
+    assert browser.daemon_ready("flight_scanner_test") is False

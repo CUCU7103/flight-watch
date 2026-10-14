@@ -20,30 +20,40 @@ JOB_TIMEOUT = 120
 MAX_STEPS = 50
 # 검색 URL로 바로 연 결과 페이지가 검증·안정될 때까지 기다리는 시간. 넘기면 Jev 에이전트로 넘어간다.
 DIRECT_RESULTS_TIMEOUT = 8
+# 결과가 단계적으로 그려지다 잠깐 멈춘 화면을 완료로 보지 않도록, 같은 결과를 이만큼 연속 관측해야 끝낸다.
+STABLE_OBSERVATIONS = 3
+SEARCH_FORM_TIMEOUT = 15
 BLOCKED_PAGE = re.compile(r"captcha|unusual traffic|verify you are human", re.I)
 
 
-def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, list[FlightOption], dict]:
-    """결과 페이지에서 옵션이 검증되고 연속 두 번 같으면 모델 호출 없이 끝낸다.
+def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, list[FlightOption]]:
+    """결과 페이지에서 옵션이 검증되고 STABLE_OBSERVATIONS번 연속 같으면 모델 호출 없이 끝낸다.
 
-    (상태, 옵션, 마지막 관측 페이지)를 돌려준다. 상태가 ""이면 호출자가 마지막 페이지에서 에이전트를 이어 간다.
+    (상태, 옵션)을 돌려준다. 상태가 ""이면 호출자가 빈 검색 폼에서 에이전트를 처음부터 돌린다.
     """
+    from jev_ultrafast.browser import StalePage
+
     deadline = time.monotonic() + DIRECT_RESULTS_TIMEOUT
-    previous = None
-    while urlparse(page.get("url", "")).path == "/travel/flights/search":
+    previous, stable = None, 0
+    while True:
+        # 차단 페이지는 /sorry/ 등 다른 경로로 바뀌므로 경로 확인보다 먼저 본다.
         if BLOCKED_PAGE.search(page.get("text", "")):
-            return "BLOCKED", [], page
+            return "BLOCKED", []
+        if urlparse(page.get("url", "")).path != "/travel/flights/search":
+            return "", []
         options = extract_options(page, job)
-        # 로딩 중에 일부 카드만 보고 끝내지 않도록 같은 결과가 두 번 관측될 때까지 기다린다.
         current = sorted((option.price_krw, option.evidence) for option in options)
-        if options and current == previous:
-            return "DONE", options, page
+        stable = stable + 1 if options and current == previous else 1
+        if options and stable >= STABLE_OBSERVATIONS:
+            return "DONE", options
         if time.monotonic() >= deadline:
-            break
+            return "", []
         previous = current
         time.sleep(0.3)
-        page = browser.observe(screenshot=False)
-    return "", [], page
+        try:
+            page = browser.observe(screenshot=False)
+        except StalePage:
+            previous = None  # 같은 이전 페이지를 다시 세어 안정으로 오판하지 않는다.
 
 
 def settle_autocomplete(browser, page: dict, value: str) -> dict:
@@ -66,16 +76,19 @@ def open_search_form(browser) -> dict:
     """
     from jev_ultrafast.browser import StalePage
 
-    browser.call("Page.navigate", url=FLIGHTS_URL)
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
+    # 폼을 열지 못하면 엉뚱한 페이지에서 유료 모델을 부르지 않도록 오류로 끝낸다.
+    if browser.call("Page.navigate", url=FLIGHTS_URL).get("errorText"):
+        raise RuntimeError("Search form navigation failed")
+    deadline = time.monotonic() + SEARCH_FORM_TIMEOUT
+    while True:
         try:
             if browser.evaluate("location.pathname === '/travel/flights' && document.readyState === 'complete'"):
-                break
+                return browser.observe(screenshot=False)
         except StalePage:
-            pass  # 이동 중에는 문서가 바뀌어 평가가 실패할 수 있다.
+            pass  # 이동 중에는 문서가 바뀌어 평가·관측이 실패할 수 있다.
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Search form did not load")
         time.sleep(0.05)
-    return browser.observe(screenshot=False)
 
 
 def validate_action(job: ScanJob, page: dict, decision: dict) -> dict | None:
@@ -132,9 +145,7 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
             invalid = 0
             for step in range(MAX_STEPS):
                 if step == 0:
-                    status, options, agent.state["page"] = wait_for_direct_results(
-                        agent.browser, agent.state["page"], job
-                    )
+                    status, options = wait_for_direct_results(agent.browser, agent.state["page"], job)
                     if status:
                         result.status, result.options = status, options
                         break
@@ -277,17 +288,20 @@ def scan(job: ScanJob) -> ScanResult:
 def daemon_ready(name: str) -> bool:
     # browser_harness._ipc는 import 시점의 BH_RUNTIME_DIR로 소켓 경로를 고정한다. 한 프로세스(웹 API)에서
     # 컨텍스트를 다시 열면 이미 지워진 첫 폴더를 보게 되므로, 현재 환경변수로 새로 import하는 자식에서 확인한다.
-    check = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys; from browser_harness.admin import require_existing_daemon as ready; ready(sys.argv[1])",
-            name,
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=10,
-    )
+    try:
+        check = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from browser_harness.admin import require_existing_daemon as ready; ready(sys.argv[1])",
+                name,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return False  # 멈춘 데몬은 죽은 것으로 보고 호출자가 다시 띄우게 한다.
     return check.returncode == 0
 
 

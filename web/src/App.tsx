@@ -18,7 +18,7 @@ type ResultRow = {
   evaluation_error?: string
 }
 
-type Config = { default_targets_krw: Record<string, number>; max_jobs: number }
+type Config = { default_targets_krw: Record<string, number>; max_jobs: number; max_days_ahead: number }
 
 const POLL_MS = 2000
 
@@ -56,8 +56,10 @@ function byClosenessToTarget(a: ResultRow, b: ResultRow): number {
 }
 
 function formatRatio(ratio: number): string {
-  const percent = Math.round(Math.abs(ratio) * 100)
-  return ratio <= 0 ? `목표가 이하 (−${percent}%)` : `+${percent}%`
+  if (ratio === 0) return '목표가와 같음'
+  // 반올림하면 0.0%가 되는 차이도 방향은 보이게 최소 0.1%로 표시한다.
+  const percent = Math.max(Math.abs(ratio) * 100, 0.1).toFixed(1)
+  return ratio < 0 ? `목표가 이하 (−${percent}%)` : `+${percent}%`
 }
 
 class ApiError extends Error {
@@ -177,7 +179,14 @@ export default function App() {
         </label>
         <label>
           첫 출발일
-          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} required />
+          <input
+            type="date"
+            value={start}
+            // 서버는 가장 늦은 귀국일이 max_days_ahead 이내인지 본다(첫 출발일 + 출발일 수 - 1 + 박 수).
+            max={config ? isoDateAfter(config.max_days_ahead - (days - 1) - nights) : undefined}
+            onChange={(e) => setStart(e.target.value)}
+            required
+          />
         </label>
         <label>
           출발일 수

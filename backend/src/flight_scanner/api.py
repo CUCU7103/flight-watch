@@ -13,7 +13,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from .browser import daemon_ready, dedicated_browser
 from .cli import process_results, run_jobs
@@ -24,7 +24,7 @@ from .models import DEFAULT_TARGETS_KRW, ScanJob, ScanResult, generate_jobs
 # 웹은 버튼 한 번이 곧 유료 호출이므로 CLI(최대 90일)보다 작게 막는다.
 MAX_JOBS = 10
 WORKERS = 3
-# Google Flights가 판매하는 범위(약 11개월) 밖의 날짜로 유료 검색을 돌리지 않는다.
+# Google Flights가 판매하는 범위(약 11개월) 밖의 날짜로 유료 검색을 돌리지 않는다(귀국일 기준).
 MAX_DAYS_AHEAD = 330
 
 # 작업 목록을 받아 process_results 형태의 행(dict) 목록을 돌려주는 함수.
@@ -35,8 +35,8 @@ AirportCode = Annotated[str, StringConstraints(pattern=r"^[A-Za-z]{3}$")]
 
 
 class ScanRequest(BaseModel):
-    # 엄격 모드: true·"1"·1.5 같은 값을 숫자로 조용히 변환하지 않고 거절한다.
-    model_config = ConfigDict(strict=True)
+    # 엄격 모드: true·"1"·1.5 같은 값을 숫자로 조용히 변환하지 않고, 오타 필드도 무시하지 않고 거절한다.
+    model_config = ConfigDict(strict=True, extra="forbid")
 
     origin: AirportCode = "ICN"
     destinations: list[AirportCode] = Field(
@@ -46,6 +46,14 @@ class ScanRequest(BaseModel):
     days: int = Field(default=5, ge=1, le=MAX_JOBS)
     nights: int = Field(default=3, ge=1, le=30)
     target_price_krw: int | None = Field(default=None, gt=0)
+
+    @field_validator("start", mode="before")
+    @classmethod
+    def date_without_time(cls, value: object) -> object:
+        # lax 날짜 파싱은 "2026-11-12T00:00:00"도 받으므로 YYYY-MM-DD만 남긴다.
+        if isinstance(value, str) and len(value) != len("YYYY-MM-DD"):
+            raise ValueError("start는 YYYY-MM-DD 형식이어야 합니다")
+        return value
 
 
 def public_row(row: dict) -> dict:
@@ -86,16 +94,28 @@ class WarmBrowser:
     def __init__(self, open_browser: Callable[[], AbstractContextManager] = dedicated_browser) -> None:
         self._open_browser = open_browser
         self._stack: ExitStack | None = None
+        # ensure()는 스캔 스레드, close()는 서버 종료(이벤트 루프)에서 불리므로 둘을 직렬화한다.
+        self._lock = threading.Lock()
+        self._closed = False
 
     def ensure(self) -> None:
-        if self._stack is not None and daemon_ready(os.environ.get("BU_NAME", "")):
-            return
-        self.close()
-        stack = ExitStack()
-        stack.enter_context(self._open_browser())
-        self._stack = stack
+        with self._lock:
+            if self._closed:
+                # 종료 뒤에 Chrome을 다시 띄우면 정리할 주체가 없어 고아 프로세스로 남는다.
+                raise RuntimeError("Server is shutting down")
+            if self._stack is not None and daemon_ready(os.environ.get("BU_NAME", "")):
+                return
+            self._close_stack()
+            stack = ExitStack()
+            stack.enter_context(self._open_browser())
+            self._stack = stack
 
     def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            self._close_stack()
+
+    def _close_stack(self) -> None:
         if self._stack is not None:
             stack, self._stack = self._stack, None
             stack.close()
@@ -155,12 +175,12 @@ def create_app(
         status, error = "done", None
         try:
             scan.status = "running"
-            results = runner(scan.jobs)
+            results = [public_row(row) for row in runner(scan.jobs)]
         except Exception as exc:
             # 공급자 응답 본문이나 자격증명이 남지 않도록 예외 타입명만 기록한다.
             status, error = "failed", type(exc).__name__
         finally:
-            scan.results, scan.error = [public_row(row) for row in results], error
+            scan.results, scan.error = results, error
             scan.finished_at = datetime.now(timezone.utc).isoformat()
             # 잠금을 먼저 풀고 종료 상태를 공개해야, 종료를 본 클라이언트의 다음 요청이 409를 받지 않는다.
             busy.release()
@@ -174,14 +194,15 @@ def create_app(
         if price is None and not set(destinations) <= set(DEFAULT_TARGETS_KRW):
             raise HTTPException(422, "FUK/NRT 외 노선은 target_price_krw가 필요합니다")
         targets = {dest: price if price is not None else DEFAULT_TARGETS_KRW[dest] for dest in destinations}
-        if request.start > (today or date.today()) + timedelta(days=MAX_DAYS_AHEAD):
-            raise HTTPException(422, f"출발일은 {MAX_DAYS_AHEAD}일 이내여야 합니다")
         try:
             jobs = generate_jobs(
                 request.start, request.days, request.nights, origin=origin, destinations=targets, today=today
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
+        # 출발일만 보면 일수·박 수만큼 범위 밖으로 나가므로 가장 늦은 귀국일로 판단한다.
+        if max(job.return_date for job in jobs) > (today or date.today()) + timedelta(days=MAX_DAYS_AHEAD):
+            raise HTTPException(422, f"귀국일은 오늘부터 {MAX_DAYS_AHEAD}일 이내여야 합니다")
         if len(jobs) > MAX_JOBS:
             raise HTTPException(422, f"작업은 최대 {MAX_JOBS}개입니다(일수 × 목적지 수 = {len(jobs)})")
         if requires_api_key and not os.environ.get("TYPESAFE_API_KEY"):
@@ -204,7 +225,7 @@ def create_app(
     @app.get("/api/config")
     def get_config() -> dict:
         # 화면이 기본 목표가·작업 상한을 따로 하드코딩하지 않도록 백엔드 값을 내려준다.
-        return {"default_targets_krw": DEFAULT_TARGETS_KRW, "max_jobs": MAX_JOBS}
+        return {"default_targets_krw": DEFAULT_TARGETS_KRW, "max_jobs": MAX_JOBS, "max_days_ahead": MAX_DAYS_AHEAD}
 
     def find(scan_id: str) -> Scan:
         if scan_id not in scans:

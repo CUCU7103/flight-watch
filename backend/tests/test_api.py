@@ -141,7 +141,9 @@ def test_second_scan_is_rejected_while_one_is_running():
         {"days": True},  # 엄격한 타입: bool·문자열 숫자·실수·시각을 받지 않는다
         {"days": "1"},
         {"target_price_krw": 1.5},
-        {"start": "2027-10-10"},  # 기준일로부터 330일 초과
+        {"start": "2027-09-07"},  # 귀국일(09-10)이 기준일로부터 330일(09-09)을 넘는다
+        {"start": "2026-11-12T00:00:00"},  # 시각이 붙은 날짜
+        {"target_price": 1},  # 오타 필드를 조용히 무시하지 않는다
     ],
 )
 def test_invalid_requests_are_rejected_before_running(change):
@@ -158,6 +160,29 @@ def test_foreign_host_header_is_rejected():
     response = client.post("/api/scans", json=FIXTURE_REQUEST, headers={"Host": "attacker.example:8000"})
     assert response.status_code == 400
     assert calls == []
+
+
+def test_return_date_on_the_limit_is_accepted():
+    client = client_for(lambda jobs: [])
+    assert client.post("/api/scans", json={**FIXTURE_REQUEST, "start": "2027-09-06"}).status_code == 202
+
+
+def test_malformed_runner_rows_release_the_lock():
+    client = client_for(lambda jobs: [None])
+    scan = wait_until_finished(client, client.post("/api/scans", json=FIXTURE_REQUEST).json()["id"])
+    assert scan["status"] == "failed"
+    assert client.post("/api/scans", json=FIXTURE_REQUEST).status_code == 202
+
+
+def test_warm_browser_refuses_to_reopen_after_shutdown(monkeypatch):
+    fake = FakeBrowserContext()
+    monkeypatch.setattr(api, "daemon_ready", lambda name: True)
+    browser = api.WarmBrowser(open_browser=fake.open)
+    browser.ensure()
+    browser.close()
+    with pytest.raises(RuntimeError):
+        browser.ensure()  # 종료 중 실행 중이던 검색이 Chrome을 다시 띄워 고아로 남기지 않는다
+    assert (fake.opened, fake.closed) == (1, 1)
 
 
 def test_live_scan_requires_api_key(monkeypatch):
@@ -204,7 +229,11 @@ def test_results_do_not_expose_provider_usage():
 
 def test_config_shares_defaults_with_the_web():
     config = client_for(lambda jobs: []).get("/api/config").json()
-    assert config == {"default_targets_krw": {"FUK": 180_000, "NRT": 250_000}, "max_jobs": MAX_JOBS}
+    assert config == {
+        "default_targets_krw": {"FUK": 180_000, "NRT": 250_000},
+        "max_jobs": MAX_JOBS,
+        "max_days_ahead": 330,
+    }
 
 
 def test_unknown_scan_is_not_found():
