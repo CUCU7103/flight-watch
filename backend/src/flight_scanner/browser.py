@@ -13,11 +13,37 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .extract import extract_options
-from .models import DEFAULT_MODEL, FLIGHTS_URL, ScanJob, ScanResult
+from .extract import extract_options, search_url
+from .models import DEFAULT_MODEL, FlightOption, ScanJob, ScanResult
 
 JOB_TIMEOUT = 120
 MAX_STEPS = 50
+# 검색 URL로 바로 연 결과 페이지가 검증·안정될 때까지 기다리는 시간. 넘기면 Jev 에이전트로 넘어간다.
+DIRECT_RESULTS_TIMEOUT = 8
+BLOCKED_PAGE = re.compile(r"captcha|unusual traffic|verify you are human", re.I)
+
+
+def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, list[FlightOption], dict]:
+    """결과 페이지에서 옵션이 검증되고 연속 두 번 같으면 모델 호출 없이 끝낸다.
+
+    (상태, 옵션, 마지막 관측 페이지)를 돌려준다. 상태가 ""이면 호출자가 마지막 페이지에서 에이전트를 이어 간다.
+    """
+    deadline = time.monotonic() + DIRECT_RESULTS_TIMEOUT
+    previous = None
+    while urlparse(page.get("url", "")).path == "/travel/flights/search":
+        if BLOCKED_PAGE.search(page.get("text", "")):
+            return "BLOCKED", [], page
+        options = extract_options(page, job)
+        # 로딩 중에 일부 카드만 보고 끝내지 않도록 같은 결과가 두 번 관측될 때까지 기다린다.
+        current = sorted((option.price_krw, option.evidence) for option in options)
+        if options and current == previous:
+            return "DONE", options, page
+        if time.monotonic() >= deadline:
+            break
+        previous = current
+        time.sleep(0.3)
+        page = browser.observe(screenshot=False)
+    return "", [], page
 
 
 def settle_autocomplete(browser, page: dict, value: str) -> dict:
@@ -81,14 +107,22 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
     started = time.monotonic()
     result = ScanResult(job, "ERROR")
     try:
-        with Agent(FLIGHTS_URL, job.goal(), input_values=job.input_values()) as agent:
+        # 결과 페이지로 바로 연다. 검증되면 모델 호출 없이 끝나고, 아니면 같은 탭에서 에이전트가 이어서 조작한다.
+        with Agent(search_url(job), job.goal(), input_values=job.input_values()) as agent:
             report_target(agent.browser.target)
             invalid = 0
-            for _ in range(MAX_STEPS):
+            for step in range(MAX_STEPS):
+                if step == 0:
+                    status, options, agent.state["page"] = wait_for_direct_results(
+                        agent.browser, agent.state["page"], job
+                    )
+                    if status:
+                        result.status, result.options = status, options
+                        break
                 if time.monotonic() - started >= JOB_TIMEOUT:
                     result.status = "TIMEOUT"
                     break
-                if re.search(r"captcha|unusual traffic|verify you are human", agent.state["page"]["text"], re.I):
+                if BLOCKED_PAGE.search(agent.state["page"]["text"]):
                     result.status = "BLOCKED"
                     break
                 try:

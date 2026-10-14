@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-FLIGHTS_URL = "https://www.google.com/travel/flights?hl=en&curr=KRW&gl=kr"
 DEFAULT_MODEL = "jev-1.13.0"
 AIRPORTS = {"ICN": "Seoul Incheon", "FUK": "Fukuoka", "NRT": "Tokyo Narita"}
 DEFAULT_TARGETS_KRW = {"FUK": 180_000, "NRT": 250_000}

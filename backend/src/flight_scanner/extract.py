@@ -49,6 +49,55 @@ def _fields(data: bytes) -> dict[int, list]:
     return fields
 
 
+def _encode_varint(value: int) -> bytes:
+    encoded = bytearray()
+    while value > 127:
+        encoded.append(value & 127 | 128)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)
+
+
+def _encode_field(number: int, value: int | bytes) -> bytes:
+    if isinstance(value, int):
+        return _encode_varint(number << 3) + _encode_varint(value)
+    return _encode_varint(number << 3 | 2) + _encode_varint(len(value)) + value
+
+
+def search_url(job: ScanJob) -> str:
+    """결과 페이지로 바로 가는 검색 URL. verified_search가 읽는 tfs 형식을 거꾸로 만든다.
+
+    필드 구성은 2026-10-14 Google이 실제로 만든 URL(tests/fixtures/captured_fuk_20261014.json)과 같다.
+    의미를 확인한 필드는 2(왕복), 3(구간: 날짜·출발·도착), 8(성인 1명), 9(이코노미)뿐이고 나머지는 그대로 재현한다.
+    """
+
+    def leg(day, origin: str, destination: str) -> bytes:
+        def airport(code: str) -> bytes:
+            return _encode_field(1, 1) + _encode_field(2, code.encode())
+
+        return (
+            _encode_field(2, day.isoformat().encode())
+            + _encode_field(13, airport(origin))
+            + _encode_field(14, airport(destination))
+        )
+
+    payload = b"".join(
+        [
+            _encode_field(1, 28),
+            _encode_field(2, 2),
+            _encode_field(3, leg(job.departure_date, job.origin, job.destination)),
+            _encode_field(3, leg(job.return_date, job.destination, job.origin)),
+            _encode_field(8, 1),
+            _encode_field(9, 1),
+            _encode_field(14, 1),
+            _encode_field(16, _encode_field(1, 2**64 - 1)),
+            _encode_field(19, 1),
+        ]
+    )
+    tfs = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+    return f"https://www.google.com/travel/flights/search?tfs={tfs}&hl=en&gl=kr&curr=KRW"
+
+
 def verified_search(page: dict, job: ScanJob) -> bool:
     parsed = urlparse(page.get("url", ""))
     if parsed.scheme != "https" or parsed.hostname != "www.google.com" or parsed.path != "/travel/flights/search":

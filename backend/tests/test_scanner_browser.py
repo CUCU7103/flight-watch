@@ -1,5 +1,7 @@
+import json
 import os
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -218,3 +220,85 @@ def test_real_loop_terminates_without_trusting_done(job, runner, monkeypatch, mo
         assert len(runner.state["history"]) == 50
     elif mode in {"captcha", "invalid"}:
         assert runner.state["history"] == []
+
+
+CAPTURED = Path(__file__).parent / "fixtures/captured_fuk_20261014.json"
+
+
+def captured_page() -> dict:
+    return json.loads(CAPTURED.read_text())["page"]
+
+
+def test_search_url_reproduces_the_url_google_generated(job):
+    from flight_scanner.extract import search_url, verified_search
+
+    page = captured_page()
+    assert search_url(job) == page["url"]
+    assert verified_search({**page, "url": search_url(job)}, job)
+
+
+def direct_runner(runner, job, pages):
+    """검색 URL로 바로 연 에이전트를 흉내 낸다. observe는 pages를 차례로 돌려준다."""
+    runner.state["page"] = pages[0]
+    runner.state["browser"].observe.side_effect = [*pages[1:], *[pages[-1]] * 50]
+    runner.state["browser"].target = "owned-test-target"
+    runner.browser = runner.state["browser"]
+    runner.input_values = job.input_values()
+    return runner
+
+
+def forbidden_model(*a, **kw):
+    raise AssertionError("검증된 결과 페이지에서는 모델을 호출하지 않는다")
+
+
+def run_with(runner, monkeypatch, job, choose=forbidden_model):
+    from flight_scanner import browser
+    from jev_ultrafast import Agent
+    from jev_ultrafast import agent as loop
+
+    opened = []
+    monkeypatch.setattr(loop, "choose", choose)
+    monkeypatch.setattr(browser.time, "sleep", lambda _: None)
+    monkeypatch.setattr(Agent, "__new__", staticmethod(lambda cls, url, *a, **kw: opened.append(url) or runner))
+    monkeypatch.setattr(Agent, "__init__", lambda *a, **kw: None)
+    return browser._run_job(job, lambda _: None), opened
+
+
+def test_verified_results_page_finishes_without_model_calls(job, runner, monkeypatch):
+    from flight_scanner.extract import search_url
+
+    page = captured_page()
+    result, opened = run_with(direct_runner(runner, job, [page, page]), monkeypatch, job)
+    assert opened == [search_url(job)]
+    assert (result.status, result.model_calls) == ("DONE", 0)
+    assert min(option.price_krw for option in result.options) == 381_300
+
+
+def test_partially_loaded_results_wait_until_stable(job, runner, monkeypatch):
+    page = captured_page()
+    cards = [i for i, a in enumerate(page["actions"]) if "select flight" in a["label"].lower()]
+    partial = {**page, "actions": [a for i, a in enumerate(page["actions"]) if i not in cards[1:]]}
+    result, _ = run_with(direct_runner(runner, job, [partial, page, page]), monkeypatch, job)
+    assert result.status == "DONE"
+    assert len(result.options) > 1  # 첫 관측의 카드 1장에서 멈추지 않는다
+
+
+def test_captcha_on_results_page_is_blocked(job, runner, monkeypatch):
+    page = {**captured_page(), "text": "Our systems have detected unusual traffic"}
+    result, _ = run_with(direct_runner(runner, job, [page]), monkeypatch, job)
+    assert (result.status, result.model_calls) == ("BLOCKED", 0)
+
+
+def test_unverified_results_fall_back_to_the_agent(job, runner, monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.extract import search_url
+    from tests.test_agent import decision
+
+    # 결과 URL이지만 카드·검색 조건을 확인할 수 없는 페이지(에이전트 루프용 필드는 갖춘 가짜 페이지)
+    page = {**runner.state["page"], "url": search_url(job)}
+    monkeypatch.setattr(browser, "DIRECT_RESULTS_TIMEOUT", 0)
+    calls = []
+    choose = lambda *a, **kw: calls.append(True) or decision("DONE")  # noqa: E731
+    result, _ = run_with(direct_runner(runner, job, [page]), monkeypatch, job, choose)
+    # 에이전트가 DONE을 말해도 결과는 독립적으로 검증되므로 INVALID_RESULT다.
+    assert calls and result.status == "INVALID_RESULT"
