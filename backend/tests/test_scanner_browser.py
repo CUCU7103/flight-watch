@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -340,7 +341,8 @@ def test_fallback_reason_records_only_path_and_counts(job, runner, monkeypatch, 
     runner = direct_runner(runner, job, [first, form])
     runner.browser.evaluate.return_value = True
     result, _ = run_with(runner, monkeypatch, job, lambda *a, **kw: decision("DONE"))
-    assert result.fallback_reason == expected
+    # 에이전트의 DONE은 독립 검증에서 걸러지므로, 대체 경로를 끝까지 돌았다면 INVALID_RESULT다.
+    assert (result.status, result.fallback_reason) == ("INVALID_RESULT", expected)
 
 
 def test_stale_observation_during_direct_wait_keeps_waiting(job, runner, monkeypatch):
@@ -359,7 +361,7 @@ def test_blocked_redirect_is_detected_before_leaving_the_results_page(job, runne
     runner.browser.call.assert_not_called()  # 차단된 상태에서 Google에 다시 이동하지 않는다
 
 
-@pytest.mark.parametrize("failure", ["navigate_error", "never_ready"])
+@pytest.mark.parametrize("failure", ["navigate_error", "never_ready", "aborted_never_ready"])
 def test_search_form_failure_ends_without_model_calls(job, runner, monkeypatch, failure):
     from flight_scanner import browser
     from flight_scanner.extract import search_url
@@ -370,6 +372,8 @@ def test_search_form_failure_ends_without_model_calls(job, runner, monkeypatch, 
     if failure == "navigate_error":
         runner.browser.call.return_value = {"errorText": "net::ERR_NAME_NOT_RESOLVED"}
     else:
+        if failure == "aborted_never_ready":
+            runner.browser.call.return_value = {"errorText": "net::ERR_ABORTED"}
         runner.browser.evaluate.return_value = False
     result, _ = run_with(runner, monkeypatch, job)
     assert (result.status, result.error) == ("ERROR", "RuntimeError")
@@ -424,16 +428,19 @@ def test_blocked_redirect_on_the_search_form_is_blocked(job, runner, monkeypatch
     assert (result.status, result.model_calls) == ("BLOCKED", 0)
 
 
-def test_cheapest_tab_price_is_read_from_the_tab_label():
+def test_cheapest_tab_price_is_read_from_the_tab_label(job):
     from flight_scanner.extract import cheapest_tab_price
 
-    assert cheapest_tab_price(captured_page()) == 381_300
+    assert cheapest_tab_price(captured_page(), job) == 381_300
+    # 다른 일정의 검색 페이지라면 그 가격을 이 작업의 값으로 남기지 않는다.
+    other = replace(job, departure_date=date(2026, 12, 1), return_date=date(2026, 12, 4))
+    assert cheapest_tab_price(captured_page(), other) is None
     # 탭이 없거나 다른 통화·형식이면 읽지 않는다.
     page = captured_page()
     for action in page["actions"]:
         if action.get("role") == "tab" and action["label"].startswith("Cheapest"):
             action["label"] = "Cheapest from $300 Learn more"
-    assert cheapest_tab_price(page) is None
+    assert cheapest_tab_price(page, job) is None
 
 
 def test_direct_results_record_the_cheapest_tab_price(job, runner, monkeypatch):

@@ -88,7 +88,11 @@ def open_search_form(browser) -> dict:
     deadline = time.monotonic() + SEARCH_FORM_TIMEOUT
     while True:
         try:
-            if browser.evaluate("location.pathname === '/travel/flights' && document.readyState === 'complete'"):
+            # ERR_ABORTED면 지금 문서가 우리가 연 문서가 아닐 수 있으므로 호스트까지 확인한다.
+            if browser.evaluate(
+                "location.hostname === 'www.google.com' && location.pathname === '/travel/flights'"
+                " && document.readyState === 'complete'"
+            ):
                 return browser.observe(screenshot=False)
         except StalePage:
             pass  # 이동 중에는 문서가 바뀌어 평가·관측이 실패할 수 있다.
@@ -162,7 +166,7 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
                         result.status = status
                         if status == "DONE":
                             result.options = extract_options(page, job)
-                            result.cheapest_tab_krw = cheapest_tab_price(page)
+                            result.cheapest_tab_krw = cheapest_tab_price(page, job)
                         break
                     agent.state["page"] = open_search_form(agent.browser)
                 if time.monotonic() - started >= JOB_TIMEOUT:
@@ -228,7 +232,7 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
                     result.status = snapshot["status"].upper()
                     if result.status == "DONE":
                         result.options = extract_options(snapshot["page"], job)
-                        result.cheapest_tab_krw = cheapest_tab_price(snapshot["page"])
+                        result.cheapest_tab_krw = cheapest_tab_price(snapshot["page"], job)
                         if not result.options:
                             result.status = "INVALID_RESULT"
                     break

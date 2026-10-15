@@ -141,7 +141,7 @@ def fixture_runner(path: Path) -> Runner:
         for job in jobs:
             options = extract_options(fixture["page"], job)
             status = "DONE" if options else "INVALID_RESULT"
-            results.append(ScanResult(job, status, options, cheapest_tab_krw=cheapest_tab_price(fixture["page"])))
+            results.append(ScanResult(job, status, options, cheapest_tab_krw=cheapest_tab_price(fixture["page"], job)))
         return process_results(results, dry_run=True, fixture_evaluation=evaluation, offline=True)
 
     return run

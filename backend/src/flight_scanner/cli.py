@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .browser import dedicated_browser, scan
 from .evaluate import evaluate, parse_evaluation, route
-from .extract import extract_options
+from .extract import cheapest_tab_price, extract_options
 from .models import DEFAULT_TARGETS_KRW, Evaluation, ScanJob, ScanResult, generate_jobs
 from .notify import notify
 
@@ -109,7 +109,14 @@ def main(argv: list[str] | None = None) -> int:
                 "mode": "fixture",
                 "fixture_kind": fixture.get("fixture_kind", "unverified"),
                 "results": process_results(
-                    [ScanResult(job, "DONE" if options else "INVALID_RESULT", options)],
+                    [
+                        ScanResult(
+                            job,
+                            "DONE" if options else "INVALID_RESULT",
+                            options,
+                            cheapest_tab_krw=cheapest_tab_price(fixture["page"], job),
+                        )
+                    ],
                     dry_run=True,
                     fixture_evaluation=evaluation,
                     offline=True,

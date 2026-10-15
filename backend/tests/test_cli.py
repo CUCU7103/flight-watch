@@ -24,6 +24,13 @@ def test_fixture_dry_run_is_end_to_end_and_never_uses_network(tmp_path, monkeypa
     assert json.loads(capsys.readouterr().out)["results"][0]["action"] == "SEND_URGENT_ALERT"
 
 
+def test_captured_fixture_replay_records_the_cheapest_tab_price(tmp_path, capsys):
+    captured = Path(__file__).parent / "fixtures/captured_fuk_20261014.json"
+    output = tmp_path / "result.json"
+    cli.main(["--fixture", str(captured), "--dry-run", "--output", str(output)])
+    assert json.loads(output.read_text())["results"][0]["cheapest_tab_krw"] == 381_300
+
+
 def test_fixture_cannot_send_real_alert(tmp_path):
     with pytest.raises(SystemExit) as exc:
         cli.main(["--fixture", str(FIXTURE), "--output", str(tmp_path / "out")])

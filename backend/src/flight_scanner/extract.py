@@ -135,11 +135,14 @@ def verified_search(page: dict, job: ScanJob) -> bool:
     )
 
 
-def cheapest_tab_price(page: dict) -> int | None:
+def cheapest_tab_price(page: dict, job: ScanJob) -> int | None:
     """Cheapest 탭 라벨의 최저가. 화면 안의 카드보다 싼 항공권이 있는지 알려 주는 참고값이다.
 
     이 가격은 조건(공항 변경·수하물 등)을 확인할 수 없으므로 옵션으로 만들거나 판정에 쓰지 않는다.
+    다른 노선·날짜의 값이 이 작업에 붙지 않도록 검색 조건이 검증된 페이지에서만 읽는다.
     """
+    if not verified_search(page, job):
+        return None
     for action in page.get("actions", []):
         if action.get("role") == "tab" and (match := CHEAPEST_TAB.match(action.get("label", ""))):
             return int(match[1])
