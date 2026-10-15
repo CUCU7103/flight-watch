@@ -422,3 +422,21 @@ def test_blocked_redirect_on_the_search_form_is_blocked(job, runner, monkeypatch
     runner.browser.evaluate.return_value = False  # 폼 경로(/travel/flights)에 도달하지 못한다
     result, _ = run_with(runner, monkeypatch, job)
     assert (result.status, result.model_calls) == ("BLOCKED", 0)
+
+
+def test_cheapest_tab_price_is_read_from_the_tab_label():
+    from flight_scanner.extract import cheapest_tab_price
+
+    assert cheapest_tab_price(captured_page()) == 381_300
+    # 탭이 없거나 다른 통화·형식이면 읽지 않는다.
+    page = captured_page()
+    for action in page["actions"]:
+        if action.get("role") == "tab" and action["label"].startswith("Cheapest"):
+            action["label"] = "Cheapest from $300 Learn more"
+    assert cheapest_tab_price(page) is None
+
+
+def test_direct_results_record_the_cheapest_tab_price(job, runner, monkeypatch):
+    page = captured_page()
+    result, _ = run_with(direct_runner(runner, job, [page, page]), monkeypatch, job)
+    assert (result.status, result.cheapest_tab_krw) == ("DONE", 381_300)

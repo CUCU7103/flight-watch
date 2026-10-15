@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, urlparse
 from .models import FlightOption, ScanJob
 
 PRICE = re.compile(r"(?:₩|KRW\s*)(\d{1,3}(?:,\d{3})+|\d+)(?![\d,])")
+# "Cheapest from 381300 South Korean won Learn more ..." 형태의 탭 라벨(2026-10-14 캡처).
+CHEAPEST_TAB = re.compile(r"^Cheapest\s+from\s+(\d+)\s+South Korean won\b")
 MONTHS = "January February March April May June July August September October November December".split()
 
 
@@ -131,6 +133,17 @@ def verified_search(page: dict, job: ScanJob) -> bool:
             for a in actions
         )
     )
+
+
+def cheapest_tab_price(page: dict) -> int | None:
+    """Cheapest 탭 라벨의 최저가. 화면 안의 카드보다 싼 항공권이 있는지 알려 주는 참고값이다.
+
+    이 가격은 조건(공항 변경·수하물 등)을 확인할 수 없으므로 옵션으로 만들거나 판정에 쓰지 않는다.
+    """
+    for action in page.get("actions", []):
+        if action.get("role") == "tab" and (match := CHEAPEST_TAB.match(action.get("label", ""))):
+            return int(match[1])
+    return None
 
 
 def extract_options(page: dict, job: ScanJob) -> list[FlightOption]:

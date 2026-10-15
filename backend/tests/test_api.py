@@ -49,6 +49,7 @@ def test_fixture_scan_runs_end_to_end():
 
     [row] = client.get(f"/api/scans/{started.json()['id']}/results").json()["results"]
     assert row["selected"]["price_krw"] == 175_000
+    assert row["cheapest_tab_krw"] is None  # 이 fixture에는 Cheapest 탭이 없다
     assert row["action"] == "SEND_URGENT_ALERT"
     assert row["notification"] == "DRY_RUN"
 

@@ -16,6 +16,7 @@ type ResultRow = {
   selected?: { price_krw: number; search_url: string }
   evaluation?: { deal_quality: number }
   evaluation_error?: string
+  cheapest_tab_krw: number | null
 }
 
 type Config = { default_targets_krw: Record<string, number>; max_jobs: number; max_days_ahead: number }
@@ -266,7 +267,16 @@ export default function App() {
                       {STATUS_LABELS[row.status] ?? row.status}
                       {row.error && <span className="muted"> ({row.error})</span>}
                     </td>
-                    <td>{row.selected ? `${row.selected.price_krw.toLocaleString()}원` : '—'}</td>
+                    <td>
+                      {row.selected ? `${row.selected.price_krw.toLocaleString()}원` : '—'}
+                      {/* Cheapest 탭 가격은 조건을 확인하지 못한 참고값이라 판정에 쓰지 않고 안내만 한다. */}
+                      {row.selected && row.cheapest_tab_krw !== null && row.cheapest_tab_krw < row.selected.price_krw && (
+                        <span className="muted">
+                          {' '}
+                          (Cheapest 탭 {row.cheapest_tab_krw.toLocaleString()}원, 조건 다를 수 있음)
+                        </span>
+                      )}
+                    </td>
                     <td>{row.job.target_price_krw.toLocaleString()}원</td>
                     <td className={ratio !== null && ratio <= 0 ? 'good' : undefined}>
                       {ratio === null ? '—' : formatRatio(ratio)}

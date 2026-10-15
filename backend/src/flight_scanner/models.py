@@ -98,6 +98,8 @@ class ScanResult:
     error: str | None = None
     # 검색 URL 직행이 실패해 에이전트로 넘어간 이유(진단용). 직행으로 끝나면 None.
     fallback_reason: str | None = None
+    # Cheapest 탭에 표시된 최저가(참고용). 옵션 최저가보다 낮으면 화면 밖에 조건이 다른 더 싼 항공권이 있다.
+    cheapest_tab_krw: int | None = None
 
 
 def generate_jobs(

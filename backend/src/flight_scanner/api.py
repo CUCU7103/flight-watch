@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 from .browser import daemon_ready, dedicated_browser
 from .cli import process_results, run_jobs
 from .evaluate import parse_evaluation
-from .extract import extract_options
+from .extract import cheapest_tab_price, extract_options
 from .models import DEFAULT_TARGETS_KRW, ScanJob, ScanResult, generate_jobs
 
 # 웹은 버튼 한 번이 곧 유료 호출이므로 CLI(최대 90일)보다 작게 막는다.
@@ -140,7 +140,8 @@ def fixture_runner(path: Path) -> Runner:
         results = []
         for job in jobs:
             options = extract_options(fixture["page"], job)
-            results.append(ScanResult(job, "DONE" if options else "INVALID_RESULT", options))
+            status = "DONE" if options else "INVALID_RESULT"
+            results.append(ScanResult(job, status, options, cheapest_tab_krw=cheapest_tab_price(fixture["page"])))
         return process_results(results, dry_run=True, fixture_evaluation=evaluation, offline=True)
 
     return run
