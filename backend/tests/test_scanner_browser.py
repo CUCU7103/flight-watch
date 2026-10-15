@@ -250,21 +250,28 @@ def direct_runner(runner, job, pages):
     return runner
 
 
-def forbidden_model(*a, **kw):
-    raise AssertionError("검증된 결과 페이지에서는 모델을 호출하지 않는다")
+def run_with(runner, monkeypatch, job, choose=None):
+    """choose를 주지 않으면 모델 호출을 금지한다.
 
-
-def run_with(runner, monkeypatch, job, choose=forbidden_model):
+    _run_job이 예외를 ERROR로 삼키고 그때 model_calls도 0으로 남으므로, 호출 여부는 따로 기록해 확인한다.
+    """
     from flight_scanner import browser
     from jev_ultrafast import Agent
     from jev_ultrafast import agent as loop
 
-    opened = []
-    monkeypatch.setattr(loop, "choose", choose)
+    opened, model_calls = [], []
+
+    def forbidden_model(*a, **kw):
+        model_calls.append(True)
+        raise AssertionError("모델을 호출하면 안 된다")
+
+    monkeypatch.setattr(loop, "choose", choose or forbidden_model)
     monkeypatch.setattr(browser.time, "sleep", lambda _: None)
     monkeypatch.setattr(Agent, "__new__", staticmethod(lambda cls, url, *a, **kw: opened.append(url) or runner))
     monkeypatch.setattr(Agent, "__init__", lambda *a, **kw: None)
-    return browser._run_job(job, lambda _: None), opened
+    result = browser._run_job(job, lambda _: None)
+    assert model_calls == []
+    return result, opened
 
 
 def test_verified_results_page_finishes_without_model_calls(job, runner, monkeypatch):
@@ -342,8 +349,8 @@ def test_search_form_failure_ends_without_model_calls(job, runner, monkeypatch, 
         runner.browser.call.return_value = {"errorText": "net::ERR_ABORTED"}
     else:
         runner.browser.evaluate.return_value = False
-    result, _ = run_with(runner, monkeypatch, job)  # 모델을 부르면 forbidden_model이 실패시킨다
-    assert (result.status, result.error, result.model_calls) == ("ERROR", "RuntimeError", 0)
+    result, _ = run_with(runner, monkeypatch, job)
+    assert (result.status, result.error) == ("ERROR", "RuntimeError")
 
 
 def test_daemon_check_timeout_counts_as_not_ready(monkeypatch):

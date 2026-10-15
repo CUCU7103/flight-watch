@@ -188,6 +188,32 @@ def test_warm_browser_refuses_to_reopen_after_shutdown(monkeypatch):
     assert (fake.opened, fake.closed) == (1, 1)
 
 
+def test_shutdown_during_browser_start_still_closes_it(monkeypatch):
+    # ensure()가 Chrome을 띄우는 도중에 close()가 끼어들어도 띄운 Chrome이 고아로 남지 않는다.
+    fake = FakeBrowserContext()
+    entered, release = threading.Event(), threading.Event()
+
+    @contextmanager
+    def slow_open():
+        entered.set()
+        release.wait(5)
+        with fake.open():
+            yield
+
+    browser = api.WarmBrowser(open_browser=slow_open)
+    starting = threading.Thread(target=browser.ensure)
+    starting.start()
+    assert entered.wait(5)
+    closing = threading.Thread(target=browser.close)
+    closing.start()
+    closing.join(0.2)
+    assert closing.is_alive()  # 기동이 끝날 때까지 기다린다
+    release.set()
+    starting.join(5)
+    closing.join(5)
+    assert (fake.opened, fake.closed) == (1, 1)
+
+
 def test_live_scan_requires_api_key(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     client = client_for(lambda jobs: [], requires_api_key=True)

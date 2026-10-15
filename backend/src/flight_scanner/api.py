@@ -1,5 +1,6 @@
 """웹 API: 검색 요청을 받아 백그라운드에서 스캔하고 상태·결과를 돌려준다. 알림은 보내지 않는다(dry-run)."""
 
+import asyncio
 import json
 import os
 import re
@@ -161,7 +162,8 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
         if on_shutdown is not None:
-            on_shutdown()
+            # Chrome 기동 중이면 close()가 잠금을 수십 초 기다릴 수 있으므로 이벤트 루프 밖에서 기다린다.
+            await asyncio.to_thread(on_shutdown)
 
     app = FastAPI(title="flight-watch", lifespan=lifespan)
     # 인증이 없으므로 loopback 이름만 받아 DNS rebinding으로 외부 페이지가 호출하는 경로를 막는다.
