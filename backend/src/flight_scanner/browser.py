@@ -77,7 +77,8 @@ def open_search_form(browser) -> dict:
     from jev_ultrafast.browser import StalePage
 
     # 폼을 열지 못하면 엉뚱한 페이지에서 유료 모델을 부르지 않도록 오류로 끝낸다.
-    if browser.call("Page.navigate", url=FLIGHTS_URL).get("errorText"):
+    # ERR_ABORTED는 페이지가 스스로 다른 이동을 시작한 경우에도 나므로, 아래에서 폼이 열리는지 마저 확인한다.
+    if browser.call("Page.navigate", url=FLIGHTS_URL).get("errorText") not in {None, "net::ERR_ABORTED"}:
         raise RuntimeError("Search form navigation failed")
     deadline = time.monotonic() + SEARCH_FORM_TIMEOUT
     while True:

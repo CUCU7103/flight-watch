@@ -346,11 +346,27 @@ def test_search_form_failure_ends_without_model_calls(job, runner, monkeypatch, 
     monkeypatch.setattr(browser, "SEARCH_FORM_TIMEOUT", 0)
     runner = direct_runner(runner, job, [{**runner.state["page"], "url": search_url(job)}])
     if failure == "navigate_error":
-        runner.browser.call.return_value = {"errorText": "net::ERR_ABORTED"}
+        runner.browser.call.return_value = {"errorText": "net::ERR_NAME_NOT_RESOLVED"}
     else:
         runner.browser.evaluate.return_value = False
     result, _ = run_with(runner, monkeypatch, job)
     assert (result.status, result.error) == ("ERROR", "RuntimeError")
+
+
+def test_aborted_form_navigation_still_waits_for_the_form(job, runner, monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.extract import search_url
+    from tests.test_agent import decision
+
+    # 페이지가 스스로 다른 이동을 시작하면 우리 이동이 ERR_ABORTED로 끝나도 폼은 열릴 수 있다.
+    monkeypatch.setattr(browser, "DIRECT_RESULTS_TIMEOUT", 0)
+    form = {**runner.state["page"], "url": browser.FLIGHTS_URL}
+    runner = direct_runner(runner, job, [{**runner.state["page"], "url": search_url(job)}, form])
+    runner.browser.call.return_value = {"errorText": "net::ERR_ABORTED"}
+    runner.browser.evaluate.return_value = True
+    calls = []
+    result, _ = run_with(runner, monkeypatch, job, lambda *a, **kw: calls.append(True) or decision("DONE"))
+    assert calls  # 폼에서 에이전트가 돌았다
 
 
 def test_daemon_check_timeout_counts_as_not_ready(monkeypatch):
