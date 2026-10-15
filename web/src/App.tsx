@@ -364,8 +364,25 @@ export default function App() {
         </div>
       </header>
 
+      <section className="hero">
+        <video className="hero-video" src="/hero-flights.mp4" poster="/hero-flights.jpg" autoPlay muted loop playsInline aria-hidden="true" />
+        <div className="container hero-inner">
+          <div className="hero-card">
+            <p className="hero-eyebrow">출발일 범위 × 목적지를 한 번에 검색</p>
+            <h1>
+              왕복 최저가를 <em>목표가</em>와 비교
+            </h1>
+            <p className="hero-note">최대 10개 조합까지 동시에 살펴봐요</p>
+            <a className="primary-button hero-cta" href="#search">
+              검색 시작
+            </a>
+          </div>
+        </div>
+        <small className="hero-credit">지도: Esri, HERE, Garmin, © OpenStreetMap contributors</small>
+      </section>
+
       <div className="container layout">
-        <form className="panel" onSubmit={submit}>
+        <form id="search" className="panel" onSubmit={submit}>
           <h2>검색 조건</h2>
 
           <div className="field">
