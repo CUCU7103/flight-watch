@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .extract import extract_options, search_url
+from .extract import extract_options, search_url, verified_search
 from .models import DEFAULT_MODEL, FLIGHTS_URL, FlightOption, ScanJob, ScanResult
 
 JOB_TIMEOUT = 120
@@ -26,10 +26,11 @@ SEARCH_FORM_TIMEOUT = 15
 BLOCKED_PAGE = re.compile(r"captcha|unusual traffic|verify you are human", re.I)
 
 
-def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, list[FlightOption]]:
+def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, list[FlightOption], str | None]:
     """결과 페이지에서 옵션이 검증되고 STABLE_OBSERVATIONS번 연속 같으면 모델 호출 없이 끝낸다.
 
-    (상태, 옵션)을 돌려준다. 상태가 ""이면 호출자가 빈 검색 폼에서 에이전트를 처음부터 돌린다.
+    (상태, 옵션, 대체 사유)를 돌려준다. 상태가 ""이면 호출자가 빈 검색 폼에서 에이전트를 처음부터 돌리고,
+    진단용으로 대체 사유를 남긴다. 사유에는 페이지 본문이나 전체 URL 없이 경로와 개수만 담는다.
     """
     from jev_ultrafast.browser import StalePage
 
@@ -38,16 +39,19 @@ def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, lis
     while True:
         # 차단 페이지는 /sorry/ 등 다른 경로로 바뀌므로 경로 확인보다 먼저 본다.
         if BLOCKED_PAGE.search(page.get("text", "")):
-            return "BLOCKED", []
-        if urlparse(page.get("url", "")).path != "/travel/flights/search":
-            return "", []
+            return "BLOCKED", [], None
+        path = urlparse(page.get("url", "")).path
+        if path != "/travel/flights/search":
+            return "", [], f"left_results:{path[:100]}"
         options = extract_options(page, job)
         current = sorted((option.price_krw, option.evidence) for option in options)
         stable = stable + 1 if options and current == previous else 1
         if options and stable >= STABLE_OBSERVATIONS:
-            return "DONE", options
+            return "DONE", options, None
         if time.monotonic() >= deadline:
-            return "", []
+            if options:
+                return "", [], f"unstable:{len(options)}"
+            return "", [], "no_options" if verified_search(page, job) else "search_unverified"
         previous = current
         time.sleep(0.3)
         try:
@@ -150,7 +154,9 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
             invalid = 0
             for step in range(MAX_STEPS):
                 if step == 0:
-                    status, options = wait_for_direct_results(agent.browser, agent.state["page"], job)
+                    status, options, result.fallback_reason = wait_for_direct_results(
+                        agent.browser, agent.state["page"], job
+                    )
                     if status:
                         result.status, result.options = status, options
                         break

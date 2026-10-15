@@ -280,7 +280,7 @@ def test_verified_results_page_finishes_without_model_calls(job, runner, monkeyp
     page = captured_page()
     result, opened = run_with(direct_runner(runner, job, [page, page]), monkeypatch, job)
     assert opened == [search_url(job)]
-    assert (result.status, result.model_calls) == ("DONE", 0)
+    assert (result.status, result.model_calls, result.fallback_reason) == ("DONE", 0, None)
     assert min(option.price_krw for option in result.options) == 381_300
 
 
@@ -319,6 +319,28 @@ def test_unverified_results_fall_back_to_the_agent(job, runner, monkeypatch):
     runner.browser.call.assert_any_call("Page.navigate", url=browser.FLIGHTS_URL)
     # 에이전트가 DONE을 말해도 결과는 독립적으로 검증되므로 INVALID_RESULT다.
     assert calls and result.status == "INVALID_RESULT"
+    assert result.fallback_reason == "search_unverified"
+
+
+@pytest.mark.parametrize(
+    "case,expected",
+    [("left", "left_results:/travel/flights"), ("no_cards", "no_options"), ("unstable", "unstable:1")],
+)
+def test_fallback_reason_records_only_path_and_counts(job, runner, monkeypatch, case, expected):
+    from flight_scanner import browser
+    from tests.test_agent import decision
+
+    page = captured_page()
+    cards = [i for i, a in enumerate(page["actions"]) if "select flight" in a["label"].lower()]
+    no_cards = {**page, "actions": [a for i, a in enumerate(page["actions"]) if i not in cards]}
+    one_card = {**page, "actions": [a for i, a in enumerate(page["actions"]) if i not in cards[1:]]}
+    form = {**runner.state["page"], "url": browser.FLIGHTS_URL}
+    first = {"left": form, "no_cards": no_cards, "unstable": one_card}[case]
+    monkeypatch.setattr(browser, "DIRECT_RESULTS_TIMEOUT", 0)
+    runner = direct_runner(runner, job, [first, form])
+    runner.browser.evaluate.return_value = True
+    result, _ = run_with(runner, monkeypatch, job, lambda *a, **kw: decision("DONE"))
+    assert result.fallback_reason == expected
 
 
 def test_stale_observation_during_direct_wait_keeps_waiting(job, runner, monkeypatch):

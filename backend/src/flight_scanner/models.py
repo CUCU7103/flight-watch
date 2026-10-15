@@ -96,6 +96,8 @@ class ScanResult:
     model_calls: int = 0
     usage: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
+    # 검색 URL 직행이 실패해 에이전트로 넘어간 이유(진단용). 직행으로 끝나면 None.
+    fallback_reason: str | None = None
 
 
 def generate_jobs(
