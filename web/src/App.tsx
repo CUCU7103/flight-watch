@@ -152,11 +152,14 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 // 달력에 그릴 내용. fares가 없으면 아직 가격이 없는 검색 범위 미리보기다.
 type Fare = { id: string; route: string; tone: Verdict['tone'] | 'problem'; label: string; shortLabel: string; price: number | null }
-type CalendarPlan = { departures: Set<string>; returns: Set<string>; fares: Map<string, Fare[]> | null }
+// returns는 오는 날 → 그 일정의 가는 날. 같은 일정은 같은 색으로 묶는다.
+type CalendarPlan = { departures: Set<string>; returns: Map<string, string>; fares: Map<string, Fare[]> | null }
+
+const TRIP_COLOR_COUNT = 6
 
 function rangePlan(start: string, days: number, nights: number): CalendarPlan {
   const departures = Array.from({ length: days }, (_, index) => addDays(start, index))
-  return { departures: new Set(departures), returns: new Set(departures.map((date) => addDays(date, nights))), fares: null }
+  return { departures: new Set(departures), returns: new Map(departures.map((date) => [addDays(date, nights), date])), fares: null }
 }
 
 function resultPlan(results: ResultRow[]): CalendarPlan {
@@ -177,7 +180,7 @@ function resultPlan(results: ResultRow[]): CalendarPlan {
   }
   return {
     departures: new Set(results.map((row) => row.job.departure_date)),
-    returns: new Set(results.map((row) => row.job.return_date)),
+    returns: new Map(results.map((row) => [row.job.return_date, row.job.departure_date])),
     fares,
   }
 }
@@ -207,11 +210,27 @@ function Stepper(props: { label: string; unit: string; value: number; min: numbe
   )
 }
 
-function Month({ month, plan, focusRoute }: { month: string; plan: CalendarPlan; focusRoute: string | null }) {
+// 출발일 칸에 적는 오는 날. 달이 바뀌면 월도 적는다.
+function returnLabel(departure: string, returnDate: string) {
+  const [, month, day] = returnDate.split('-').map(Number)
+  return returnDate.slice(0, 7) === departure.slice(0, 7) ? { wide: `${day}일`, narrow: `${day}` } : { wide: `${month}월 ${day}일`, narrow: `${month}/${day}` }
+}
+
+type MonthProps = {
+  month: string
+  plan: CalendarPlan
+  focusRoute: string | null
+  // 가리킨 일정의 가는 날. 이 일정만 진하게 두고 나머지 표시는 흐린다.
+  activeTrip: string | null
+  onActiveTripChange: (trip: string | null) => void
+}
+
+function Month({ month, plan, focusRoute, activeTrip, onActiveTripChange }: MonthProps) {
   const [year, monthNumber] = month.split('-').map(Number)
   const offset = new Date(year, monthNumber - 1, 1).getDay()
   const dayCount = new Date(year, monthNumber, 0).getDate()
   const departureOrder = [...plan.departures].sort()
+  const returnOf = new Map([...plan.returns].map(([returnDate, departure]) => [departure, returnDate]))
   return (
     <section className="month" aria-label={`${year}년 ${monthNumber}월`}>
       <div className="month-head">
@@ -239,11 +258,29 @@ function Month({ month, plan, focusRoute }: { month: string; plan: CalendarPlan;
           const isReturn = plan.returns.has(iso)
           const classes = ['day', weekday === 0 && 'sun', weekday === 6 && 'sat', isDeparture && 'is-departure', isReturn && 'is-return']
           const fares = plan.fares?.get(iso) ?? []
+          const order = departureOrder.indexOf(iso)
+          const returnOrder = isReturn ? departureOrder.indexOf(plan.returns.get(iso) ?? '') : -1
+          const style = {
+            ...(isDeparture && { '--order': order, '--departure-color': `var(--trip-${order % TRIP_COLOR_COUNT})` }),
+            ...(isReturn && { '--return-color': `var(--trip-${returnOrder % TRIP_COLOR_COUNT})` }),
+          } as CSSProperties
+          // 가는 날이면서 다른 일정의 오는 날인 칸은 가는 날 일정을 대표로 삼는다.
+          const trip = isDeparture ? iso : (plan.returns.get(iso) ?? null)
+          const returnDate = returnOf.get(iso)
+          const label = isDeparture && returnDate ? returnLabel(iso, returnDate) : null
           return (
             <li
               key={iso}
               className={classes.filter(Boolean).join(' ')}
-              style={isDeparture ? { '--order': departureOrder.indexOf(iso) } as CSSProperties : undefined}
+              style={style}
+              data-dim-departure={activeTrip !== null && isDeparture && iso !== activeTrip ? true : undefined}
+              data-dim-return={activeTrip !== null && isReturn && plan.returns.get(iso) !== activeTrip ? true : undefined}
+              // 마우스는 가리키는 동안, 터치는 탭한 칸이 바뀔 때까지 유지한다.
+              onPointerEnter={(event) => event.pointerType === 'mouse' && onActiveTripChange(trip)}
+              onPointerLeave={(event) => event.pointerType === 'mouse' && onActiveTripChange(null)}
+              onClick={() => onActiveTripChange(trip)}
+              onFocus={() => onActiveTripChange(trip)}
+              onBlur={() => onActiveTripChange(null)}
             >
               <span className="day-number">
                 {day}
@@ -254,6 +291,14 @@ function Month({ month, plan, focusRoute }: { month: string; plan: CalendarPlan;
                   </span>
                 )}
               </span>
+              {label && (
+                <span className="trip-return">
+                  <span className="sr-only">오는 날 </span>
+                  <span className="wide" aria-hidden="true">→ {label.wide}</span>
+                  <span className="narrow" aria-hidden="true">→{label.narrow}</span>
+                  <span className="sr-only">{label.wide}</span>
+                </span>
+              )}
               {fares.map((fare) => (
                 <a
                   key={fare.id}
@@ -285,12 +330,15 @@ function Month({ month, plan, focusRoute }: { month: string; plan: CalendarPlan;
 }
 
 function Calendar({ plan, focusRoute }: { plan: CalendarPlan; focusRoute: string | null }) {
+  const [activeTrip, setActiveTrip] = useState<string | null>(null)
+  // 검색 범위가 바뀌어 사라진 일정은 무시한다.
+  const visibleTrip = activeTrip !== null && plan.departures.has(activeTrip) ? activeTrip : null
   // 가격은 출발일 칸에 적히므로 출발일이 걸친 달만 그린다.
   const months = [...new Set([...plan.departures].map((date) => date.slice(0, 7)))].sort()
   return (
     <div className="months">
       {months.map((month) => (
-        <Month key={month} month={month} plan={plan} focusRoute={focusRoute} />
+        <Month key={month} month={month} plan={plan} focusRoute={focusRoute} activeTrip={visibleTrip} onActiveTripChange={setActiveTrip} />
       ))}
     </div>
   )
@@ -669,6 +717,7 @@ export default function App() {
               <span>
                 <i className="key-return" /> 오는 날
               </span>
+              <span>같은 색끼리 한 일정</span>
             </div>
           </div>
 
