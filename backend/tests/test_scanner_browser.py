@@ -447,3 +447,146 @@ def test_direct_results_record_the_cheapest_tab_price(job, runner, monkeypatch):
     page = captured_page()
     result, _ = run_with(direct_runner(runner, job, [page, page]), monkeypatch, job)
     assert (result.status, result.cheapest_tab_krw) == ("DONE", 381_300)
+
+
+def captured_return(name: str, target_price_krw: int = 300_000) -> tuple[ScanJob, dict, dict]:
+    """2026-10-17 실측: 결과 페이지(page)와 최저가 가는 편을 누른 뒤의 오는 편 목록(return_page)."""
+    data = json.loads((Path(__file__).parent / f"fixtures/captured_{name}_return_20261017.json").read_text())
+    fields = data["job"]
+    job = ScanJob(
+        fields["origin"],
+        fields["destination"],
+        date.fromisoformat(fields["departure_date"]),
+        date.fromisoformat(fields["return_date"]),
+        target_price_krw,
+    )
+    return job, data["page"], data["return_page"]
+
+
+def return_browser(returned: dict):
+    from unittest.mock import Mock
+
+    return Mock(fresh=Mock(return_value=True), evaluate=Mock(return_value=True), observe=Mock(return_value=returned))
+
+
+def test_layover_hours_reads_only_complete_layover_labels():
+    from flight_scanner.extract import layover_hours
+
+    assert layover_hours("Nonstop flight with Jin Air. Total duration 1 hr 30 min.   Select flight") == 0
+    long_stop = "1 stop flight with Etihad. Layover (1 of 1) is a 12 hr 50 min layover at Zayed. Select flight"
+    assert layover_hours(long_stop) == pytest.approx(12 + 50 / 60)
+    # 경유 수와 경유 문구 수가 맞지 않거나 시간을 읽지 못하면 추측하지 않는다.
+    assert layover_hours("2 stop flight with X. Layover (1 of 2) is a 1 hr layover at A. Select flight") is None
+    assert layover_hours("1 stop flight with X. Select flight") is None
+    assert layover_hours("1 stop flight with X. Layover (1 of 1) is a 1 day layover at A. Select flight") is None
+
+
+def test_return_list_is_read_only_on_the_return_page():
+    from flight_scanner.extract import extract_options, return_prices
+
+    job, outbound, returned = captured_return("fuk")
+    assert [price for price, _ in return_prices(returned, job)] == [422_400, 462_400]
+    assert return_prices(outbound, job) == []
+    assert extract_options(returned, job) == []  # 오는 편 카드를 가는 편으로 읽지 않는다
+
+
+@pytest.mark.parametrize("name,layover,airport_change", [("fuk", 0, False), ("lis", 12 + 50 / 60, None)])
+def test_return_check_confirms_the_cheapest_combination(name, layover, airport_change, monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.extract import extract_options
+
+    monkeypatch.setattr(browser.time, "sleep", lambda _: None)
+    job, outbound, returned = captured_return(name)
+    option = extract_options(outbound, job)[0]
+    fake = return_browser(returned)
+    confirmed, reason = browser.check_return(fake, outbound, job, option)
+    assert reason is None
+    assert (confirmed.return_verified, confirmed.airport_change, confirmed.price_krw) == (
+        True,
+        airport_change,
+        option.price_krw,
+    )
+    assert confirmed.max_layover_hours == pytest.approx(layover)
+    assert fake.evaluate.call_count == 1  # 가는 편 한 번만 누르고 오는 편은 누르지 않는다
+
+
+def test_long_return_layover_is_discarded_under_target(monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.evaluate import route
+    from flight_scanner.extract import extract_options
+    from flight_scanner.models import Evaluation
+
+    monkeypatch.setattr(browser.time, "sleep", lambda _: None)
+    job, outbound, returned = captured_return("lis", target_price_krw=1_000_000)
+    option = extract_options(outbound, job)[0]
+    confirmed, _ = browser.check_return(return_browser(returned), outbound, job, option)
+    evaluation = Evaluation(1.0, 0.0, 5.0, "SEND_URGENT_ALERT")
+    assert route(evaluation, option) == "SAVE_TO_DAILY_DIGEST"
+    assert route(evaluation, confirmed) == "DISCARD"  # 오는 편 12시간 50분 경유
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("stale", "outbound_stale"),
+    ("not_clicked", "outbound_click_failed"),
+    ("no_return_list", "return_unverified"),
+    ("price", "return_price_mismatch"),
+    ("left", "left_results:/travel/flights/booking"),
+    ("crash", "error:RuntimeError"),
+    ("missing", "outbound_unverified"),
+    ("google_error", "return_error"),
+])
+def test_unconfirmed_return_keeps_the_outbound_result(case, expected, monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.extract import extract_options
+
+    monkeypatch.setattr(browser.time, "sleep", lambda _: None)
+    job, outbound, returned = captured_return("fuk")
+    option = extract_options(outbound, job)[0]
+    fake = return_browser(returned)
+    if case == "stale":
+        fake.fresh.return_value = False
+    elif case == "not_clicked":
+        fake.evaluate.return_value = False
+    elif case == "no_return_list":
+        monkeypatch.setattr(browser, "RETURN_RESULTS_TIMEOUT", 0)
+    elif case == "price":
+        option = replace(option, price_krw=option.price_krw - 1)
+    elif case == "left":
+        fake.observe.return_value = {**returned, "url": "https://www.google.com/travel/flights/booking?tfs=x"}
+    elif case == "crash":
+        fake.evaluate.side_effect = RuntimeError("cdp")
+    elif case == "missing":
+        option = replace(option, evidence="화면에 없는 카드")
+    elif case == "google_error":
+        fake.observe.return_value = {**returned, "text": "No results returned.\nOops, something went wrong."}
+    unchanged, reason = browser.check_return(fake, outbound, job, option)
+    assert (unchanged, reason) == (option, expected)
+    if case in {"stale", "missing"}:
+        fake.evaluate.assert_not_called()
+
+
+def test_return_click_checks_the_card_and_its_link(monkeypatch):
+    from flight_scanner import browser
+    from flight_scanner.extract import extract_options
+
+    monkeypatch.setattr(browser.time, "sleep", lambda _: None)
+    job, outbound, returned = captured_return("fuk")
+    option = extract_options(outbound, job)[0]
+    fake = return_browser(returned)
+    browser.check_return(fake, outbound, job, option)
+    script = fake.evaluate.call_args.args[0]
+    assert "role') !== 'link'" in script and "u.hostname!=='www.google.com'" in script
+    # 오는 편까지 확인된 옵션은 다시 누르지 않는다(누르면 예약 옵션 페이지로 넘어간다).
+    confirmed = replace(option, return_verified=True)
+    assert browser.check_return(fake, outbound, job, confirmed) == (confirmed, None)
+    assert fake.evaluate.call_count == 1
+
+
+def test_direct_results_confirm_the_return_without_model_calls(runner, monkeypatch):
+    job, outbound, returned = captured_return("fuk")
+    runner = direct_runner(runner, job, [outbound, outbound, outbound, returned])
+    runner.browser.evaluate.return_value = True
+    result, _ = run_with(runner, monkeypatch, job)
+    assert (result.status, result.model_calls, result.return_reason) == ("DONE", 0, None)
+    cheapest = result.options[0]
+    assert (cheapest.price_krw, cheapest.return_verified, cheapest.max_layover_hours) == (422_400, True, 0)

@@ -10,11 +10,20 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlparse
 
-from .extract import cheapest_tab_price, extract_options, search_url, verified_search
-from .models import DEFAULT_MODEL, FLIGHTS_URL, ScanJob, ScanResult
+from .extract import (
+    card_evidence,
+    cheapest_tab_price,
+    extract_options,
+    layover_hours,
+    return_prices,
+    search_url,
+    verified_search,
+)
+from .models import DEFAULT_MODEL, FLIGHTS_URL, FlightOption, ScanJob, ScanResult
 
 JOB_TIMEOUT = 120
 MAX_STEPS = 50
@@ -23,6 +32,8 @@ DIRECT_RESULTS_TIMEOUT = 8
 # 결과가 단계적으로 그려지다 잠깐 멈춘 화면을 완료로 보지 않도록, 같은 결과를 이만큼 연속 관측해야 끝낸다.
 STABLE_OBSERVATIONS = 3
 SEARCH_FORM_TIMEOUT = 15
+# 가는 편을 고른 뒤 오는 편 목록이 검증·안정될 때까지 기다리는 시간. 넘기면 오는 편을 미확인으로 둔다.
+RETURN_RESULTS_TIMEOUT = 8
 BLOCKED_PAGE = re.compile(r"captcha|unusual traffic|verify you are human", re.I)
 
 
@@ -59,6 +70,83 @@ def wait_for_direct_results(browser, page: dict, job: ScanJob) -> tuple[str, dic
             page = browser.observe(screenshot=False)
         except StalePage:
             previous = None  # 같은 이전 페이지를 다시 세어 안정으로 오판하지 않는다.
+
+
+def check_return(browser, page: dict, job: ScanJob, option: FlightOption) -> tuple[FlightOption, str | None]:
+    """최저가 가는 편을 코드가 직접 골라 오는 편 목록을 열고, 같은 왕복 합계의 오는 편으로 일정·경유를 확인한다.
+
+    누르는 것은 검증된 결과 페이지에서 방금 관측한 가는 편 카드 하나뿐이다. 오는 편 카드를 누르면 예약 옵션
+    (항공사 외부 링크) 페이지로 넘어가므로 누르지 않는다. 확인하지 못하면 가는 편 결과는 그대로 두고
+    (원래 옵션, 사유)를 돌려준다. 사유에는 페이지 본문 없이 경로·개수만 담는다.
+    """
+    from jev_ultrafast.browser import StalePage
+
+    try:
+        if option.return_verified:
+            return option, None  # 오는 편까지 정해진 카드를 누르면 예약 옵션 페이지로 넘어간다.
+        card = next(
+            (a for a in page.get("actions", []) if card_evidence(page, a) == option.evidence),
+            None,
+        )
+        if not verified_search(page, job) or card is None or type(card.get("node")) is not int:
+            return option, "outbound_unverified"
+        if not browser.fresh(page, card):
+            return option, "outbound_stale"
+        # jev의 act는 카드 링크 위에 겹친 내용 요소 때문에 가려졌다고 거절하므로, 확인한 노드를 DOM에서 직접 누른다.
+        # hit-test를 건너뛰는 대신, 카드를 감싼 링크가 있으면 에이전트 경로처럼 flights 검색 안인지 먼저 확인한다.
+        clicked = browser.evaluate(
+            "(() => { const e=window.__jevFast?.nodes.get("
+            + str(card["node"])
+            + """);
+              if (!e?.isConnected || e.getAttribute('role') !== 'link') return false;
+              const raw=e.closest('a[href]')?.getAttribute('href');
+              if (raw) { try { const u=new URL(raw,location.href);
+                if (u.protocol!=='https:' || u.hostname!=='www.google.com' ||
+                    !u.pathname.startsWith('/travel/flights')) return false; } catch { return false; } }
+              e.click(); return true; })()"""
+        )
+        if clicked is not True:
+            return option, "outbound_click_failed"
+        deadline = time.monotonic() + RETURN_RESULTS_TIMEOUT
+        previous: list[tuple[int, str]] = []
+        stable = 0
+        while True:
+            if time.monotonic() >= deadline:
+                return option, f"return_unstable:{len(previous)}" if previous else "return_unverified"
+            time.sleep(0.3)
+            try:
+                current = browser.observe(screenshot=False)
+            except StalePage:
+                previous, stable = [], 0
+                continue
+            parsed = urlparse(current.get("url", ""))
+            if parsed.hostname != "www.google.com" or parsed.path != "/travel/flights/search":
+                return option, f"left_results:{parsed.path[:100]}"
+            # 일부 조합(2026-10-17 FUK 11-19→11-26 실측)은 Google이 오는 편 목록 대신 오류를 띄운다.
+            if "Oops, something went wrong" in current.get("text", ""):
+                return option, "return_error"
+            returns = return_prices(current, job)
+            stable = stable + 1 if returns and returns == previous else 1
+            if returns and stable >= STABLE_OBSERVATIONS:
+                break
+            previous = returns
+        price = returns[0][0]
+        # 가는 편 카드의 "From" 가격은 오는 편 중 최저 조합의 합계다. 다르면 다른 조합을 본 것이므로 확인하지 않는다.
+        if price != option.price_krw:
+            return option, "return_price_mismatch"
+        # 같은 최저가 오는 편이 여럿이면 라벨 순서가 아니라 경유가 가장 짧은 편으로 판정한다.
+        cheapest = [layover_hours(label) for amount, label in returns if amount == price]
+        return_layover = min((hours for hours in cheapest if hours is not None), default=None)
+        outbound_layover = layover_hours(card["label"])
+        layover = None if outbound_layover is None or return_layover is None else max(outbound_layover, return_layover)
+        # 공항 변경 문구는 아직 실측하지 못해, 양쪽 모두 직항일 때만 변경 없음으로 확정한다.
+        confirmed = replace(
+            option, return_verified=True, max_layover_hours=layover, airport_change=False if layover == 0 else None
+        )
+        return confirmed, None
+    except Exception as exc:
+        # 부가 확인이 실패했다고 이미 검증한 가는 편 결과(DONE)를 잃지 않는다.
+        return option, f"error:{type(exc).__name__}"
 
 
 def settle_autocomplete(browser, page: dict, value: str) -> dict:
@@ -167,6 +255,9 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
                         if status == "DONE":
                             result.options = extract_options(page, job)
                             result.cheapest_tab_krw = cheapest_tab_price(page, job)
+                            result.options[0], result.return_reason = check_return(
+                                agent.browser, page, job, result.options[0]
+                            )
                         break
                     agent.state["page"] = open_search_form(agent.browser)
                 if time.monotonic() - started >= JOB_TIMEOUT:
@@ -235,6 +326,14 @@ def _run_job(job: ScanJob, report_target) -> ScanResult:
                         result.cheapest_tab_krw = cheapest_tab_price(snapshot["page"], job)
                         if not result.options:
                             result.status = "INVALID_RESULT"
+                        # 상위 프로세스가 JOB_TIMEOUT에 끊으면 검증한 결과까지 잃으므로 시간이 남을 때만 확인한다.
+                        # 상위 시계는 spawn·import 시간만큼 먼저 흐르므로 대기 시간 외에 15초를 남긴다.
+                        elif time.monotonic() - started < JOB_TIMEOUT - RETURN_RESULTS_TIMEOUT - 15:
+                            result.options[0], result.return_reason = check_return(
+                                agent.browser, snapshot["page"], job, result.options[0]
+                            )
+                        else:
+                            result.return_reason = "no_time"
                     break
             else:
                 result.status = "TIMEOUT"

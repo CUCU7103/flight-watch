@@ -3,6 +3,7 @@
 import base64
 import binascii
 import re
+from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 from .models import FlightOption, ScanJob
@@ -10,6 +11,8 @@ from .models import FlightOption, ScanJob
 PRICE = re.compile(r"(?:₩|KRW\s*)(\d{1,3}(?:,\d{3})+|\d+)(?![\d,])")
 # "Cheapest from 381300 South Korean won Learn more ..." 형태의 탭 라벨(2026-10-14 캡처).
 CHEAPEST_TAB = re.compile(r"^Cheapest\s+from\s+(\d+)\s+South Korean won\b")
+# "Layover (1 of 1) is a 2 hr 45 min layover at ..." (2026-10-17 캡처). 밤샘 경유의 "overnight"는 실측 전 가정이다.
+LAYOVER = re.compile(r"Layover \((\d+) of (\d+)\) is an? (?:(\d+) hr ?)?(?:(\d+) min ?)?(?:overnight )?layover at ")
 MONTHS = "January February March April May June July August September October November December".split()
 
 
@@ -149,24 +152,93 @@ def cheapest_tab_price(page: dict, job: ScanJob) -> int | None:
     return None
 
 
+def card_evidence(page: dict, action: dict) -> str | None:
+    """항공권 카드("Select flight")가 감싼 화면 텍스트. 카드가 아니거나 읽을 수 없으면 None."""
+    if "select flight" not in action.get("label", "").lower():
+        return None
+    guard = page.get("guards", {}).get(str(action.get("node")), [])
+    if not guard or not isinstance(guard[-1], str):
+        return None
+    return guard[-1].strip()
+
+
+def _card_price(evidence: str) -> int | None:
+    """원화 왕복 합계가 정확히 하나로 읽히는 카드의 가격. 편도·"from" 가격·외화면 None."""
+    if not re.search(r"round[ -]trip", evidence, re.I):
+        return None
+    if re.search(r"one[ -]way|\bfrom\s+(?:₩|KRW)|\$|\bUSD\b", evidence, re.I):
+        return None
+    prices = {int(match.replace(",", "")) for match in PRICE.findall(evidence)}
+    if len(prices) != 1 or not 0 < next(iter(prices)) <= 5_000_000:
+        return None
+    return next(iter(prices))
+
+
+def _route_shown(text: str, origin: str, destination: str) -> bool:
+    return bool(re.search(rf"\b{origin}\s*(?:->|→|–|—|to|-)\s*{destination}\b", text))
+
+
+def _leaves_on(label: str, day: date) -> bool:
+    departure = re.search(
+        r"\bLeaves\b.+?\bon\s+[A-Za-z]+,?\s+([A-Za-z]+)\s+(\d{1,2})"
+        r"(?:,\s*(\d{4}))?",
+        label,
+    )
+    return bool(re.search(rf"\b{day.isoformat()}\b", label)) or bool(
+        departure
+        and departure[1].lower() == MONTHS[day.month - 1].lower()
+        and int(departure[2]) == day.day
+        and (not departure[3] or int(departure[3]) == day.year)
+    )
+
+
+def layover_hours(label: str) -> float | None:
+    """카드 라벨에서 가장 긴 경유 시간. 직항이면 0, 경유 문구를 전부 읽지 못하면 None(fail-closed).
+
+    "1 stop flight with ... Layover (1 of 1) is a 2 hr 45 min layover at ..." 형태(2026-10-17 캡처)만 읽는다.
+    """
+    if re.search(r"\bNonstop flight\b", label):
+        return None if "Layover" in label else 0.0
+    stops = re.search(r"\b(\d+) stops? flight\b", label)
+    layovers = LAYOVER.findall(label)
+    if not stops or [(int(index), int(total)) for index, total, _, _ in layovers] != [
+        (index, int(stops[1])) for index in range(1, int(stops[1]) + 1)
+    ]:
+        return None
+    hours = [int(hour or 0) + int(minute or 0) / 60 for _, _, hour, minute in layovers]
+    return max(hours) if all(hours) else None
+
+
+def return_prices(page: dict, job: ScanJob) -> list[tuple[int, str]]:
+    """가는 편을 고른 뒤 나오는 오는 편 목록에서 검증된 (왕복 합계, 카드 라벨)을 싼 순으로 돌려준다."""
+    if not verified_search(page, job) or "Returning flights" not in page.get("text", ""):
+        return []
+    returns = []
+    for action in page.get("actions", []):
+        evidence = card_evidence(page, action)
+        price = _card_price(evidence) if evidence else None
+        label = action.get("label", "")
+        if (
+            evidence
+            and price
+            and _route_shown(evidence + "\n" + label, job.destination, job.origin)
+            and _leaves_on(label, job.return_date)
+        ):
+            returns.append((price, label))
+    return sorted(returns)
+
+
 def extract_options(page: dict, job: ScanJob) -> list[FlightOption]:
     if not verified_search(page, job):
         return []
     options: list[FlightOption] = []
     seen = set()
     for action in page.get("actions", []):
-        if "select flight" not in action.get("label", "").lower():
+        evidence = card_evidence(page, action)
+        if evidence is None or evidence in seen:
             continue
-        guard = page.get("guards", {}).get(str(action.get("node")), [])
-        if not guard or not isinstance(guard[-1], str):
-            continue
-        evidence = guard[-1].strip()
-        if evidence in seen or not re.search(r"round[ -]trip", evidence, re.I):
-            continue
-        if re.search(r"one[ -]way|\bfrom\s+(?:₩|KRW)|\$|\bUSD\b", evidence, re.I):
-            continue
-        prices = {int(match.replace(",", "")) for match in PRICE.findall(evidence)}
-        if len(prices) != 1 or not 0 < next(iter(prices)) <= 5_000_000:
+        price = _card_price(evidence)
+        if price is None:
             continue
         # shortcut: only labelled full nonstop itineraries verify conditions; expand after capturing real layouts.
         outbound = re.search(r"^Outbound:\s*(.+)$", evidence, re.I | re.M)
@@ -189,21 +261,9 @@ def extract_options(page: dict, job: ScanJob) -> list[FlightOption]:
             continue
         if not outbound:
             label = action.get("label", "")
-            route_ok = bool(
-                re.search(rf"\b{job.origin}\s*(?:->|→|–|—|to|-)\s*{job.destination}\b", evidence + "\n" + label)
+            out_ok = _route_shown(evidence + "\n" + label, job.origin, job.destination) and _leaves_on(
+                label, job.departure_date
             )
-            departure = re.search(
-                r"\bLeaves\b.+?\bon\s+[A-Za-z]+,?\s+([A-Za-z]+)\s+(\d{1,2})"
-                r"(?:,\s*(\d{4}))?",
-                label,
-            )
-            date_ok = bool(re.search(rf"\b{job.departure_date.isoformat()}\b", label)) or bool(
-                departure
-                and departure[1].lower() == MONTHS[job.departure_date.month - 1].lower()
-                and int(departure[2]) == job.departure_date.day
-                and (not departure[3] or int(departure[3]) == job.departure_date.year)
-            )
-            out_ok = route_ok and date_ok
         if not out_ok:
             continue
         seen.add(evidence)
@@ -225,7 +285,7 @@ def extract_options(page: dict, job: ScanJob) -> list[FlightOption]:
         options.append(
             FlightOption(
                 job=job,
-                price_krw=next(iter(prices)),
+                price_krw=price,
                 evidence=evidence,
                 search_url=page["url"],
                 outbound_verified=out_ok,
