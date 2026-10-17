@@ -556,6 +556,7 @@ def test_long_return_layover_is_discarded_under_target(monkeypatch):
     ("crash", "error:RuntimeError"),
     ("missing", "outbound_unverified"),
     ("google_error", "return_error"),
+    ("separate", "separate_tickets"),
 ])
 def test_unconfirmed_return_keeps_the_outbound_result(case, expected, monkeypatch):
     from flight_scanner import browser
@@ -581,6 +582,13 @@ def test_unconfirmed_return_keeps_the_outbound_result(case, expected, monkeypatc
         option = replace(option, evidence="화면에 없는 카드")
     elif case == "google_error":
         fake.observe.return_value = {**returned, "text": "No results returned.\nOops, something went wrong."}
+    elif case == "separate":
+        # 2026-10-17 NRT 실측: 별도 발권 카드는 라벨에 "Separate tickets"가 붙는다.
+        actions = [
+            {**a, "label": a.get("label", "").replace("Nonstop", "Separate tickets. Nonstop")}
+            for a in returned["actions"]
+        ]
+        fake.observe.return_value = {**returned, "actions": actions}
     unchanged, reason = browser.check_return(fake, outbound, job, option)
     assert (unchanged, reason) == (option, expected)
     if case in {"stale", "missing"}:

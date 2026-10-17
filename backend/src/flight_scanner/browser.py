@@ -134,8 +134,12 @@ def check_return(browser, page: dict, job: ScanJob, option: FlightOption) -> tup
         # 가는 편 카드의 "From" 가격은 오는 편 중 최저 조합의 합계다. 다르면 다른 조합을 본 것이므로 확인하지 않는다.
         if price != option.price_krw:
             return option, "return_price_mismatch"
+        labels = [label for amount, label in returns if amount == price]
+        # 별도 발권은 편도 두 장의 합계라 한쪽이 지연·결항돼도 다른 쪽이 보호되지 않으므로 왕복으로 확정하지 않는다.
+        if any("Separate tickets" in label for label in [card["label"], *labels]):
+            return option, "separate_tickets"
         # 같은 최저가 오는 편이 여럿이면 라벨 순서가 아니라 경유가 가장 짧은 편으로 판정한다.
-        cheapest = [layover_hours(label) for amount, label in returns if amount == price]
+        cheapest = [layover_hours(label) for label in labels]
         return_layover = min((hours for hours in cheapest if hours is not None), default=None)
         outbound_layover = layover_hours(card["label"])
         layover = None if outbound_layover is None or return_layover is None else max(outbound_layover, return_layover)
