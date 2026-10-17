@@ -13,7 +13,14 @@ type ResultRow = {
   status: string
   error: string | null
   action: string
-  selected?: { price_krw: number; search_url: string }
+  selected?: {
+    price_krw: number
+    search_url: string
+    return_verified: boolean
+    baggage_known: boolean
+    max_layover_hours: number | null
+    airport_change: boolean | null
+  }
   evaluation?: { deal_quality: number }
   evaluation_error?: string
   cheapest_tab_krw: number | null
@@ -122,6 +129,24 @@ function formatDelta(price: number, target: number): string {
   return difference < 0
     ? `목표가보다 ${won(-difference)} 낮음 (−${percent}%)`
     : `목표가보다 ${won(difference)} 높음 (+${percent}%)`
+}
+
+// 코드가 확인한 항공권 조건. 목표가와 상관없이 모든 행에 보여 준다.
+// 가는 편은 확인된 항공권만 결과에 남으므로 오는 편만 따로 표시한다.
+function conditionsOf(selected: NonNullable<ResultRow['selected']>): string {
+  const minutes = selected.max_layover_hours === null ? null : Math.round(selected.max_layover_hours * 60)
+  const layover =
+    minutes === null
+      ? '경유 미확인'
+      : minutes === 0
+        ? '직항'
+        : `최대 경유 ${Math.floor(minutes / 60)}시간${minutes % 60 ? ` ${minutes % 60}분` : ''}`
+  return [
+    selected.return_verified ? '왕복 일정 확인' : '오는 편 미확인',
+    selected.baggage_known ? '위탁 수하물 포함' : '수하물 미확인',
+    layover,
+    ...(selected.airport_change === false ? [] : [selected.airport_change ? '공항 변경 있음' : '공항 변경 미확인']),
+  ].join(' · ')
 }
 
 // 결과 행의 문제를 한 줄로. 정상 결과면 null.
@@ -344,6 +369,13 @@ function Calendar({ plan, focusRoute }: { plan: CalendarPlan; focusRoute: string
   )
 }
 
+// 같은 노선·날짜·성인 1명·일반석의 네이버 항공권 검색 결과 주소.
+// ponytail: 국제선 경로만 만든다. 국내선(GMP-CJU 등)을 검색하게 되면 /flights/domestic/ 경로가 필요하다.
+function naverSearchUrl(job: ResultRow['job']) {
+  const compact = (date: string) => date.replaceAll('-', '')
+  return `https://flight.naver.com/flights/international/${job.origin}-${job.destination}-${compact(job.departure_date)}/${job.destination}-${job.origin}-${compact(job.return_date)}?adult=1&fareType=Y`
+}
+
 function ResultRowView({ row }: { row: ResultRow }) {
   const { job, selected } = row
   const verdict = verdictOf(row)
@@ -375,18 +407,28 @@ function ResultRowView({ row }: { row: ResultRow }) {
           </span>
           <span className={isUnderTarget ? 'delta under' : 'delta over'}>{formatDelta(selected.price_krw, job.target_price_krw)}</span>
           <span className="secondary">목표가 {won(job.target_price_krw)}</span>
+          <span className="secondary">{conditionsOf(selected)}</span>
         </div>
       ) : (
         <div className="row-price" />
       )}
-      {selected && (
-        <a className={`link-button ${verdict.tone}`} href={selected.search_url} target="_blank" rel="noreferrer">
-          Google Flights에서 확인
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M7 17 17 7M9 7h8v8" />
-          </svg>
+      <div className="row-links">
+        {selected && (
+          <a className={`link-button ${verdict.tone}`} href={selected.search_url} target="_blank" rel="noreferrer">
+            Google Flights에서 확인
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7 17 17 7M9 7h8v8" />
+            </svg>
+          </a>
+        )}
+        {/* 네이버는 수집하지 않고(robots.txt·봇 차단) 같은 조건의 검색 결과를 직접 열어 비교만 한다. */}
+        <a className="link-button" href={naverSearchUrl(job)} target="_blank" rel="noreferrer">
+          네이버에서 보기
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M7 17 17 7M9 7h8v8" />
+            </svg>
         </a>
-      )}
+      </div>
       {(problem || row.evaluation_error || (selected && row.cheapest_tab_krw !== null && row.cheapest_tab_krw < selected.price_krw)) && (
         <div className="row-notes">
           {problem && (
@@ -557,7 +599,7 @@ export default function App() {
               {destinationChips.map((code) => (
                 <span key={code} className={code in defaultTargets || config === null ? 'chip' : 'chip needs-target'}>
                   <span className="code">{code}</span>
-                  {config && <span className="chip-note">{code in defaultTargets ? `기본 ${won(defaultTargets[code])}` : '목표가 필요'}</span>}
+                  {config && !(code in defaultTargets) && <span className="chip-note">목표가 필요</span>}
                   <button type="button" aria-label={`${code} 삭제`} onClick={() => setDestinationChips((chips) => chips.filter((chip) => chip !== code))}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <path d="M6 6l12 12M18 6 6 18" />
@@ -671,7 +713,7 @@ export default function App() {
             </button>
             {!isOverLimit && (
               <p className="hint">
-                공항 {destinationCodes.length}곳 × 출발일 {days}일. 결과 페이지를 바로 읽지 못하거나 목표가 이하인 표를 평가할 때 유료 모델 API를 호출합니다.
+                공항 {destinationCodes.length}곳 × 출발일 {days}일. 대부분 결과 페이지를 바로 읽어 모델을 부르지 않습니다. 바로 읽지 못하면 Jev(유료)가 검색 폼을 조작하고, 목표가 이하이면서 수하물까지 모든 조건이 확인된 표만 Jev가 한 번 더 평가합니다.
               </p>
             )}
             {formError && (

@@ -1016,6 +1016,11 @@ legend {
   font-weight: 600;
 }
 
+.row-links {
+  display: grid;
+  gap: 8px;
+}
+
 .link-button {
   display: inline-flex;
   align-items: center;
@@ -1068,8 +1073,8 @@ legend {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .row .link-button {
-    justify-self: start;
+  .row-links {
+    justify-content: start;
   }
 }
 
@@ -1079,8 +1084,8 @@ legend {
     padding: 14px;
   }
 
-  .row .link-button {
-    justify-self: stretch;
+  .row-links {
+    justify-content: stretch;
   }
 }
 
