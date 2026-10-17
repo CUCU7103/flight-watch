@@ -103,7 +103,8 @@ def search_url(job: ScanJob) -> str:
     return f"https://www.google.com/travel/flights/search?tfs={tfs}&hl=en&gl=kr&curr=KRW"
 
 
-def verified_search(page: dict, job: ScanJob) -> bool:
+def _verified_search_url(page: dict, job: ScanJob) -> bool:
+    """검색 URL(tfs)이 이 작업의 왕복·성인 1명·일반석·두 구간인지. 화면 컨트롤은 보지 않는다."""
     parsed = urlparse(page.get("url", ""))
     if parsed.scheme != "https" or parsed.hostname != "www.google.com" or parsed.path != "/travel/flights/search":
         return False
@@ -126,6 +127,12 @@ def verified_search(page: dict, job: ScanJob) -> bool:
         ]:
             return False
     except (KeyError, ValueError, IndexError, TypeError, AttributeError, UnicodeError, binascii.Error):
+        return False
+    return True
+
+
+def verified_search(page: dict, job: ScanJob) -> bool:
+    if not _verified_search_url(page, job):
         return False
     actions = page.get("actions", [])
     return (
@@ -210,8 +217,12 @@ def layover_hours(label: str) -> float | None:
 
 
 def return_prices(page: dict, job: ScanJob) -> list[tuple[int, str]]:
-    """가는 편을 고른 뒤 나오는 오는 편 목록에서 검증된 (왕복 합계, 카드 라벨)을 싼 순으로 돌려준다."""
-    if not verified_search(page, job) or "Returning flights" not in page.get("text", ""):
+    """가는 편을 고른 뒤 나오는 오는 편 목록에서 검증된 (왕복 합계, 카드 라벨)을 싼 순으로 돌려준다.
+
+    가는 편을 누르면 목록으로 스크롤돼 검색 컨트롤이 관측에서 빠지므로(2026-10-17 실측) 조건은 URL로만 확인한다.
+    누르기 전 같은 탭의 결과 페이지는 check_return이 컨트롤까지 검증한다.
+    """
+    if not _verified_search_url(page, job) or not re.search(r"returning flights", page.get("text", ""), re.I):
         return []
     returns = []
     for action in page.get("actions", []):

@@ -490,6 +490,28 @@ def test_return_list_is_read_only_on_the_return_page():
     assert extract_options(returned, job) == []  # 오는 편 카드를 가는 편으로 읽지 않는다
 
 
+@pytest.mark.parametrize("name,cheapest", [("fuk", 287_400), ("nrt", 332_998)])
+def test_return_list_is_read_after_the_search_controls_scroll_away(name, cheapest):
+    # 2026-10-17 실측 30건 중 24건: 가는 편을 누르면 목록으로 스크롤돼 검색 컨트롤이 관측에서 빠지고,
+    # 제목도 "Top returning flights"로 바뀐다. 검색 조건은 URL(tfs)로 확인한다.
+    from flight_scanner.extract import return_prices, verified_search
+
+    data = json.loads((Path(__file__).parent / f"fixtures/captured_{name}_return_scrolled_20261017.json").read_text())
+    fields = data["job"]
+    job = ScanJob(
+        fields["origin"],
+        fields["destination"],
+        date.fromisoformat(fields["departure_date"]),
+        date.fromisoformat(fields["return_date"]),
+        300_000,
+    )
+    page = data["return_page"]
+    assert not verified_search(page, job)  # 가는 편 결과는 여전히 화면 컨트롤까지 확인해야 읽는다
+    assert return_prices(page, job)[0][0] == cheapest
+    other_day = replace(job, return_date=date(2026, 10, 28))
+    assert return_prices(page, other_day) == []
+
+
 @pytest.mark.parametrize("name,layover,airport_change", [("fuk", 0, False), ("lis", 12 + 50 / 60, None)])
 def test_return_check_confirms_the_cheapest_combination(name, layover, airport_change, monkeypatch):
     from flight_scanner import browser
