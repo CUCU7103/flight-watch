@@ -468,7 +468,7 @@ export default function App() {
   // 칩으로 확정하지 않은 입력도 검색에 포함한다. 백엔드도 목적지를 dict로 중복 제거하므로 화면의 검색 건수와 맞춘다.
   const destinationCodes = [...new Set([...destinationChips, ...parseCodes(destinationDraft)])]
   const defaultTargets = config?.default_targets_krw ?? {}
-  const maxJobs = config?.max_jobs ?? 10
+  const maxJobs = config?.max_jobs ?? 30
   const jobCount = days * destinationCodes.length
   const isOverLimit = jobCount > maxJobs
   // 설정을 받기 전에는 판단하지 않는다(서버가 다시 검증한다).

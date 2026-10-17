@@ -23,8 +23,9 @@ from .evaluate import parse_evaluation
 from .extract import cheapest_tab_price, extract_options
 from .models import DEFAULT_TARGETS_KRW, ScanJob, ScanResult, generate_jobs
 
-# 웹은 버튼 한 번이 곧 유료 호출이므로 CLI(최대 90일)보다 작게 막는다.
-MAX_JOBS = 10
+# 검색은 서버 전체에서 1건씩만 돌고, 에이전트 경로로 넘어가면 유료 호출이 생기므로 CLI(최대 90일)보다 작게 막는다.
+# 2026-10-17 실측: 30건이 약 46초, 에이전트 경로 1건(18회 호출), 연속 2회 차단 없음.
+MAX_JOBS = 30
 WORKERS = 3
 # Google Flights가 판매하는 범위(약 11개월) 밖의 날짜로 유료 검색을 돌리지 않는다(귀국일 기준).
 MAX_DAYS_AHEAD = 330
