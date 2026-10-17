@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
 
 // 백엔드 API 계약(backend/src/flight_scanner/api.py)과 맞춘 타입.
 type ScanSummary = {
@@ -24,18 +24,29 @@ type Config = { default_targets_krw: Record<string, number>; max_jobs: number; m
 const POLL_MS = 2000
 const MAX_NIGHTS = 30
 
-// 판정 그룹은 이 순서로 보여 준다. 알 수 없는 액션은 제외 그룹에 넣는다.
+// 판정은 색이 아니라 인쇄 표식으로 구분한다: 추천=채움, 검토 필요=윤곽, 제외=취소선.
+// 알 수 없는 액션은 제외로 본다.
 const VERDICTS = [
   { action: 'SEND_URGENT_ALERT', label: '추천', tone: 'pick' },
   { action: 'SAVE_TO_DAILY_DIGEST', label: '검토 필요', tone: 'review' },
   { action: 'DISCARD', label: '제외', tone: 'drop' },
 ] as const
 
+type Verdict = (typeof VERDICTS)[number]
+
 const STATUS_LABELS: Record<string, string> = {
   ERROR: '오류 — 검색 중 문제가 생겼습니다',
   TIMEOUT: '시간 초과 — 제한 시간 안에 결과를 받지 못했습니다',
   BLOCKED: '차단됨 — 사이트가 검색을 막았습니다',
   INVALID_RESULT: '검증 실패 — 가격과 조건을 확인하지 못했습니다',
+}
+
+// 좁은 달력 칸에 한 줄로 들어가는 문제 표기
+const SHORT_STATUS_LABELS: Record<string, string> = {
+  ERROR: '오류',
+  TIMEOUT: '초과',
+  BLOCKED: '차단',
+  INVALID_RESULT: '실패',
 }
 
 const WEEKDAYS = '일월화수목금토'
@@ -46,14 +57,18 @@ function parseIsoDate(iso: string): Date {
   return new Date(year, month - 1, day)
 }
 
-function addDays(iso: string, days: number): string {
-  const date = parseIsoDate(iso)
-  date.setDate(date.getDate() + days)
+function toIsoDate(date: Date): string {
   return date.toLocaleDateString('sv-SE') // YYYY-MM-DD (로컬 시간대)
 }
 
+function addDays(iso: string, days: number): string {
+  const date = parseIsoDate(iso)
+  date.setDate(date.getDate() + days)
+  return toIsoDate(date)
+}
+
 function isoDateAfter(days: number): string {
-  return addDays(new Date().toLocaleDateString('sv-SE'), days)
+  return addDays(toIsoDate(new Date()), days)
 }
 
 function formatShortDate(iso: string): string {
@@ -69,8 +84,21 @@ function won(amount: number): string {
   return `${amount.toLocaleString()}원`
 }
 
+// 좁은 달력 칸용 표기: 252,400 → 25.2만
+function manwon(amount: number): string {
+  return `${(amount / 10_000).toFixed(1).replace(/\.0$/, '')}만`
+}
+
 function parseCodes(text: string): string[] {
   return text.toUpperCase().split(/[\s,]+/).filter(Boolean)
+}
+
+function verdictOf(row: ResultRow): Verdict {
+  return VERDICTS.find((verdict) => verdict.tone !== 'drop' && verdict.action === row.action) ?? VERDICTS[2]
+}
+
+function rowId(row: ResultRow): string {
+  return `fare-${row.job.destination}-${row.job.departure_date}`
 }
 
 // 목표가 대비 초과율. 음수면 목표가 이하다. 가격이 없으면 null.
@@ -96,6 +124,12 @@ function formatDelta(price: number, target: number): string {
     : `목표가보다 ${won(difference)} 높음 (+${percent}%)`
 }
 
+// 결과 행의 문제를 한 줄로. 정상 결과면 null.
+function problemOf(row: ResultRow): string | null {
+  if (row.status !== 'DONE') return STATUS_LABELS[row.status] ?? row.status
+  return row.selected ? null : '표시된 항공편이 없습니다'
+}
+
 class ApiError extends Error {
   readonly status: number
 
@@ -116,15 +150,36 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T
 }
 
-const PLANE_PATH =
-  'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z'
+// 달력에 그릴 내용. fares가 없으면 아직 가격이 없는 검색 범위 미리보기다.
+type Fare = { id: string; route: string; tone: Verdict['tone'] | 'problem'; label: string; shortLabel: string; price: number | null }
+type CalendarPlan = { departures: Set<string>; returns: Set<string>; fares: Map<string, Fare[]> | null }
 
-function PlaneIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={PLANE_PATH} />
-    </svg>
-  )
+function rangePlan(start: string, days: number, nights: number): CalendarPlan {
+  const departures = Array.from({ length: days }, (_, index) => addDays(start, index))
+  return { departures: new Set(departures), returns: new Set(departures.map((date) => addDays(date, nights))), fares: null }
+}
+
+function resultPlan(results: ResultRow[]): CalendarPlan {
+  const fares = new Map<string, Fare[]>()
+  for (const row of results) {
+    const verdict = verdictOf(row)
+    const problem = problemOf(row)
+    const fare: Fare = {
+      id: rowId(row),
+      route: row.job.destination,
+      tone: problem ? 'problem' : verdict.tone,
+      // 칸에는 문제의 앞부분(예: '검증 실패')만 적는다.
+      label: problem ? problem.split(' — ')[0] : verdict.label,
+      shortLabel: row.status !== 'DONE' ? (SHORT_STATUS_LABELS[row.status] ?? '오류') : row.selected ? verdict.label : '없음',
+      price: row.selected?.price_krw ?? null,
+    }
+    fares.set(row.job.departure_date, [...(fares.get(row.job.departure_date) ?? []), fare])
+  }
+  return {
+    departures: new Set(results.map((row) => row.job.departure_date)),
+    returns: new Set(results.map((row) => row.job.return_date)),
+    fares,
+  }
 }
 
 function Stepper(props: { label: string; unit: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
@@ -134,63 +189,148 @@ function Stepper(props: { label: string; unit: string; value: number; min: numbe
       <span className="sublabel">{label}</span>
       <div className="stepper" role="group" aria-label={label}>
         <button type="button" aria-label={`${label} 줄이기`} disabled={value <= min} onClick={() => onChange(value - 1)}>
-          −
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M5 12h14" />
+          </svg>
         </button>
         <output aria-live="polite">
           {value}
           {unit}
         </output>
         <button type="button" aria-label={`${label} 늘리기`} disabled={value >= max} onClick={() => onChange(value + 1)}>
-          +
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M5 12h14M12 5v14" />
+          </svg>
         </button>
       </div>
     </div>
   )
 }
 
-function ResultCard({ row, verdict }: { row: ResultRow; verdict: (typeof VERDICTS)[number] }) {
-  const { job, selected } = row
-  const problem = row.status !== 'DONE' ? (STATUS_LABELS[row.status] ?? row.status) : !selected && '표시된 항공편이 없습니다'
+function Month({ month, plan, focusRoute }: { month: string; plan: CalendarPlan; focusRoute: string | null }) {
+  const [year, monthNumber] = month.split('-').map(Number)
+  const offset = new Date(year, monthNumber - 1, 1).getDay()
+  const dayCount = new Date(year, monthNumber, 0).getDate()
+  const departureOrder = [...plan.departures].sort()
   return (
-    <article className="card">
-      <div className="card-body">
-        <div className="card-title">
-          <span className="code">
-            {job.origin} → {job.destination}
-          </span>
-          <span className={`badge ${verdict.tone}`}>{verdict.label}</span>
-          {row.evaluation && <span className="hint">평가 {row.evaluation.deal_quality.toFixed(1)} / 5</span>}
-        </div>
-        <div className="secondary">
-          {formatShortDate(job.departure_date)} – {formatShortDate(job.return_date)} · {nightsBetween(job.departure_date, job.return_date)}박
-        </div>
-        {selected && (
-          <div className="price-line">
-            <span className="price">{won(selected.price_krw)}</span>
-            <span className={selected.price_krw <= job.target_price_krw ? 'delta under' : 'delta over'}>
-              {formatDelta(selected.price_krw, job.target_price_krw)}
-            </span>
-            <span className="hint">목표가 {won(job.target_price_krw)}</span>
-          </div>
-        )}
-        {problem && (
-          <div className="problem">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 8v5M12 16.5v.01" />
-            </svg>
-            <span>
-              {problem}
-              {row.error && <span className="hint"> ({row.error})</span>}
-            </span>
-          </div>
-        )}
-        {/* Cheapest 탭 가격은 조건을 확인하지 못한 참고값이라 판정에 쓰지 않고 안내만 한다. */}
-        {selected && row.cheapest_tab_krw !== null && row.cheapest_tab_krw < selected.price_krw && (
-          <div className="hint">Cheapest 탭에는 {won(row.cheapest_tab_krw)}도 있습니다. 경유·수하물 조건이 다를 수 있어요.</div>
-        )}
-        {row.evaluation_error && <div className="hint">모델 평가에 실패해 코드 규칙으로만 판정했습니다.</div>}
+    <section className="month" aria-label={`${year}년 ${monthNumber}월`}>
+      <div className="month-head">
+        <span className="month-number">{monthNumber}</span>
+        <span className="month-label">
+          {year}년 {monthNumber}월
+        </span>
       </div>
+      <div className="weekdays" aria-hidden="true">
+        {[...WEEKDAYS].map((weekday, index) => (
+          <span key={weekday} className={index === 0 ? 'sun' : index === 6 ? 'sat' : undefined}>
+            {weekday}
+          </span>
+        ))}
+      </div>
+      <ol className="days">
+        {Array.from({ length: offset }, (_, index) => (
+          <li key={`blank-${index}`} className="blank" aria-hidden="true" />
+        ))}
+        {Array.from({ length: dayCount }, (_, index) => {
+          const day = index + 1
+          const iso = `${month}-${String(day).padStart(2, '0')}`
+          const weekday = (offset + index) % 7
+          const isDeparture = plan.departures.has(iso)
+          const isReturn = plan.returns.has(iso)
+          const classes = ['day', weekday === 0 && 'sun', weekday === 6 && 'sat', isDeparture && 'is-departure', isReturn && 'is-return']
+          const fares = plan.fares?.get(iso) ?? []
+          return (
+            <li
+              key={iso}
+              className={classes.filter(Boolean).join(' ')}
+              style={isDeparture ? { '--order': departureOrder.indexOf(iso) } as CSSProperties : undefined}
+            >
+              <span className="day-number">
+                {day}
+                {(isDeparture || isReturn) && (
+                  <span className="sr-only">
+                    일{isDeparture && ' 가는 날'}
+                    {isReturn && ' 오는 날'}
+                  </span>
+                )}
+              </span>
+              {fares.map((fare) => (
+                <a
+                  key={fare.id}
+                  href={`#${fare.id}`}
+                  className={`fare ${fare.tone}`}
+                  data-dim={focusRoute !== null && focusRoute !== fare.route ? true : undefined}
+                >
+                  <span className="fare-route">{fare.route}</span>
+                  {fare.price === null ? (
+                    <span className="fare-price">
+                      <span className="wide">{fare.label}</span>
+                      <span className="narrow">{fare.shortLabel}</span>
+                    </span>
+                  ) : (
+                    <span className="fare-price">
+                      <span className="wide">{won(fare.price)}</span>
+                      <span className="narrow">{manwon(fare.price)}</span>
+                      <span className="sr-only"> {fare.label}</span>
+                    </span>
+                  )}
+                </a>
+              ))}
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+function Calendar({ plan, focusRoute }: { plan: CalendarPlan; focusRoute: string | null }) {
+  // 가격은 출발일 칸에 적히므로 출발일이 걸친 달만 그린다.
+  const months = [...new Set([...plan.departures].map((date) => date.slice(0, 7)))].sort()
+  return (
+    <div className="months">
+      {months.map((month) => (
+        <Month key={month} month={month} plan={plan} focusRoute={focusRoute} />
+      ))}
+    </div>
+  )
+}
+
+function ResultRowView({ row }: { row: ResultRow }) {
+  const { job, selected } = row
+  const verdict = verdictOf(row)
+  const problem = problemOf(row)
+  const isUnderTarget = selected !== undefined && selected.price_krw <= job.target_price_krw
+  return (
+    <li id={rowId(row)} className={`row ${verdict.tone}`}>
+      <div className="row-route">
+        <strong>
+          {job.origin} → {job.destination}
+        </strong>
+        <span className={`mark ${verdict.tone}`}>{verdict.label}</span>
+      </div>
+      <div className="row-dates">
+        <span className="date-range">
+          {formatShortDate(job.departure_date)} – {formatShortDate(job.return_date)}
+        </span>
+        <span className="secondary">
+          {nightsBetween(job.departure_date, job.return_date)}박
+          {row.evaluation && ` · 평가 ${row.evaluation.deal_quality.toFixed(1)} / 5`}
+        </span>
+      </div>
+      {selected ? (
+        <div className="row-price">
+          <span className="price">{won(selected.price_krw)}</span>
+          {/* 막대 길이 = 가격 ÷ 목표가. 가운데 눈금이 목표가, 목표가의 2배에서 자른다. */}
+          <span className={isUnderTarget ? 'delta-bar under' : 'delta-bar over'} aria-hidden="true">
+            <span style={{ width: `${Math.min(selected.price_krw / job.target_price_krw, 2) * 50}%` }} />
+          </span>
+          <span className={isUnderTarget ? 'delta under' : 'delta over'}>{formatDelta(selected.price_krw, job.target_price_krw)}</span>
+          <span className="secondary">목표가 {won(job.target_price_krw)}</span>
+        </div>
+      ) : (
+        <div className="row-price" />
+      )}
       {selected && (
         <a className={`link-button ${verdict.tone}`} href={selected.search_url} target="_blank" rel="noreferrer">
           Google Flights에서 확인
@@ -199,52 +339,22 @@ function ResultCard({ row, verdict }: { row: ResultRow; verdict: (typeof VERDICT
           </svg>
         </a>
       )}
-    </article>
-  )
-}
-
-function Results({ results }: { results: ResultRow[] }) {
-  const sorted = [...results].sort(byClosenessToTarget)
-  const groups = VERDICTS.map((verdict) => ({
-    verdict,
-    rows: sorted.filter((row) =>
-      verdict.tone === 'drop' ? !VERDICTS.some((known) => known.tone !== 'drop' && known.action === row.action) : row.action === verdict.action,
-    ),
-  }))
-  const routes = [...new Set(results.map((row) => row.job.destination))].join(' · ')
-  return (
-    <>
-      <div className="results-head">
-        <div className="row-between">
-          <h2>결과 {results.length}건</h2>
-          {results.length > 0 && (
-            <span className="secondary">
-              {results[0].job.origin} → {routes}
-            </span>
+      {(problem || row.evaluation_error || (selected && row.cheapest_tab_krw !== null && row.cheapest_tab_krw < selected.price_krw)) && (
+        <div className="row-notes">
+          {problem && (
+            <p className="problem">
+              {problem}
+              {row.error && <span className="secondary"> ({row.error})</span>}
+            </p>
           )}
+          {/* Cheapest 탭 가격은 조건을 확인하지 못한 참고값이라 판정에 쓰지 않고 안내만 한다. */}
+          {selected && row.cheapest_tab_krw !== null && row.cheapest_tab_krw < selected.price_krw && (
+            <p className="secondary">Cheapest 탭에는 {won(row.cheapest_tab_krw)}도 있습니다. 경유·수하물 조건이 다를 수 있어요.</p>
+          )}
+          {row.evaluation_error && <p className="secondary">모델 평가에 실패해 코드 규칙으로만 판정했습니다.</p>}
         </div>
-        <div className="pills">
-          {groups.map(({ verdict, rows }) => (
-            <span key={verdict.tone} className={`badge pill ${verdict.tone}`}>
-              {verdict.label} {rows.length}
-            </span>
-          ))}
-        </div>
-      </div>
-      {groups
-        .filter(({ rows }) => rows.length > 0)
-        .map(({ verdict, rows }) => (
-          <div key={verdict.tone} className="group">
-            <h3>{verdict.label}</h3>
-            {rows.map((row) => (
-              <ResultCard key={`${row.job.destination}-${row.job.departure_date}`} row={row} verdict={verdict} />
-            ))}
-          </div>
-        ))}
-      <p className="hint">
-        목표가 이하를 먼저, 그다음 목표가에 가까운 순으로 정렬했습니다. 실시간 운임은 변동됩니다. 예약 전에 가격·수하물·일정을 다시 확인하세요.
-      </p>
-    </>
+      )}
+    </li>
   )
 }
 
@@ -259,7 +369,11 @@ export default function App() {
   const [targetPrice, setTargetPrice] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [scan, setScan] = useState<ScanSummary | null>(null)
+  // 검색 중에는 폼을 바꿔도 달력이 실제로 검색하는 범위를 보여 주도록 제출한 값을 따로 둔다.
+  const [submittedPlan, setSubmittedPlan] = useState<CalendarPlan | null>(null)
   const [results, setResults] = useState<ResultRow[] | null>(null)
+  const [focusRoute, setFocusRoute] = useState<string | null>(null)
+  const boardTitleRef = useRef<HTMLHeadingElement>(null)
 
   // 칩으로 확정하지 않은 입력도 검색에 포함한다. 백엔드도 목적지를 dict로 중복 제거하므로 화면의 검색 건수와 맞춘다.
   const destinationCodes = [...new Set([...destinationChips, ...parseCodes(destinationDraft)])]
@@ -309,8 +423,20 @@ export default function App() {
     }
   }, [scanId, isPolling])
 
+  // 결과나 실패가 도착했는데 달력이 화면 아래쪽에 있으면(좁은 화면) 달력으로 옮기고 제목에 포커스를 준다.
+  const hasSettled = results !== null || scan?.status === 'failed'
+  useEffect(() => {
+    const title = boardTitleRef.current
+    if (!hasSettled || !title) return
+    if (title.getBoundingClientRect().top > window.innerHeight / 2) title.scrollIntoView({ block: 'start' })
+    title.focus({ preventScroll: true })
+  }, [hasSettled])
+
   const isRunning = isPolling
   const canSubmit = !isRunning && destinationCodes.length > 0 && !isOverLimit
+  const plan = results ? resultPlan(results) : isRunning ? submittedPlan : start ? rangePlan(start, days, nights) : null
+  const resultRoutes = results ? [...new Set(results.map((row) => row.job.destination))] : []
+  const visibleRows = results ? [...results].sort(byClosenessToTarget).filter((row) => focusRoute === null || row.job.destination === focusRoute) : []
 
   function commitDraft() {
     setDestinationChips(destinationCodes)
@@ -346,6 +472,8 @@ export default function App() {
       })
       // 이전 결과는 새 검색이 접수된 뒤에만 지운다(요청이 거부되면 이전 결과를 그대로 둔다).
       setResults(null)
+      setFocusRoute(null)
+      setSubmittedPlan(rangePlan(start, days, nights))
       setScan(started)
     } catch (error) {
       setFormError(error instanceof Error ? error.message : String(error))
@@ -354,36 +482,14 @@ export default function App() {
 
   return (
     <>
-      <header className="app-header">
-        <div className="container header-row">
-          <div className="brand">
-            <PlaneIcon size={26} />
-            <span>flight-watch</span>
-          </div>
-          <p className="secondary">Google Flights 왕복 최저가를 찾아 목표가와 비교합니다 · 예약은 하지 않습니다</p>
-        </div>
+      <header className="topbar">
+        <h1>flight-watch</h1>
+        <p>Google Flights 왕복 최저가를 날짜별로 찾아 목표가와 비교합니다 · 예약은 하지 않습니다</p>
       </header>
 
-      <section className="hero">
-        <video className="hero-video" src="/hero-flights.mp4" poster="/hero-flights.jpg" autoPlay muted loop playsInline aria-hidden="true" />
-        <div className="container hero-inner">
-          <div className="hero-card">
-            <p className="hero-eyebrow">출발일 범위 × 목적지를 한 번에 검색</p>
-            <h1>
-              왕복 최저가를 <em>목표가</em>와 비교
-            </h1>
-            <p className="hero-note">최대 10개 조합까지 동시에 살펴봐요</p>
-            <a className="primary-button hero-cta" href="#search">
-              검색 시작
-            </a>
-          </div>
-        </div>
-        <small className="hero-credit">지도: Esri, HERE, Garmin, © OpenStreetMap contributors</small>
-      </section>
-
-      <div className="container layout">
+      <main className="workspace">
         <form id="search" className="panel" onSubmit={submit}>
-          <h2>검색 조건</h2>
+          <h2 className="sr-only">검색 조건</h2>
 
           <div className="field">
             <label htmlFor="origin">출발 공항</label>
@@ -420,9 +526,6 @@ export default function App() {
                 onBlur={commitDraft}
               />
             </div>
-            {config && (
-              <p className="hint">{Object.keys(defaultTargets).join('·')} 외 공항을 넣으면 목표가를 직접 입력해야 합니다.</p>
-            )}
           </div>
 
           <fieldset className="field">
@@ -447,22 +550,18 @@ export default function App() {
               <Stepper label="머무는 기간" unit="박" value={nights} min={1} max={MAX_NIGHTS} onChange={setNights} />
             </div>
             {start && (
-              <div className="date-preview">
-                <div className="row-between">
-                  <span className="secondary">가는 날</span>
-                  <strong>
-                    {formatShortDate(start)}
-                    {days > 1 && ` ~ ${formatShortDate(addDays(start, days - 1))}`}
-                  </strong>
-                </div>
-                <div className="row-between">
-                  <span className="secondary">오는 날</span>
-                  <strong>
-                    {formatShortDate(addDays(start, nights))}
-                    {days > 1 && ` ~ ${formatShortDate(addDays(start, days - 1 + nights))}`}
-                  </strong>
-                </div>
-              </div>
+              <dl className="date-preview">
+                <dt>가는 날</dt>
+                <dd>
+                  {formatShortDate(start)}
+                  {days > 1 && ` ~ ${formatShortDate(addDays(start, days - 1))}`}
+                </dd>
+                <dt>오는 날</dt>
+                <dd>
+                  {formatShortDate(addDays(start, nights))}
+                  {days > 1 && ` ~ ${formatShortDate(addDays(start, days - 1 + nights))}`}
+                </dd>
+              </dl>
             )}
           </fieldset>
 
@@ -499,21 +598,22 @@ export default function App() {
           </div>
 
           <div className="submit-area">
-            <div className="row-between">
-              <span className="secondary">검색할 조합</span>
+            <div className="budget-head">
+              <span>검색할 조합</span>
               <span>
-                <strong className={isOverLimit ? 'job-count over' : 'job-count'}>{jobCount}건</strong>{' '}
-                <span className="hint">/ 최대 {maxJobs}건</span>
+                <strong className={isOverLimit ? 'job-count over' : 'job-count'}>{jobCount}</strong>
+                <span className="secondary"> / {maxJobs}건</span>
               </span>
             </div>
-            <div className="meter" aria-hidden="true">
-              <div className={isOverLimit ? 'over' : undefined} style={{ width: `${Math.min(jobCount / maxJobs, 1) * 100}%` }} />
+            {/* 한 번에 검색할 수 있는 칸 수가 정해져 있다. 조합이 칸을 채우고, 넘치면 모두 빨갛게. */}
+            <div className={isOverLimit ? 'slots over' : 'slots'} aria-hidden="true">
+              {Array.from({ length: maxJobs }, (_, index) => (
+                <i key={index} className={index < jobCount ? 'on' : undefined} />
+              ))}
             </div>
-            <p className={isOverLimit ? 'hint warning' : 'hint'}>
-              {isOverLimit
-                ? `한 번에 ${maxJobs}건까지 검색할 수 있습니다. 공항이나 출발일 범위를 줄여 주세요.`
-                : `공항 ${destinationCodes.length}곳 × 출발일 ${days}일. 결과 페이지를 바로 읽지 못하거나 목표가 이하인 표를 평가할 때 유료 모델 API를 호출합니다.`}
-            </p>
+            {isOverLimit && (
+              <p className="hint warning">한 번에 {maxJobs}건까지 검색할 수 있습니다. 공항이나 출발일 범위를 줄여 주세요.</p>
+            )}
             <button type="submit" className="primary-button" disabled={!canSubmit}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="7" />
@@ -521,6 +621,11 @@ export default function App() {
               </svg>
               {isRunning ? '검색 중…' : `${jobCount}건 검색`}
             </button>
+            {!isOverLimit && (
+              <p className="hint">
+                공항 {destinationCodes.length}곳 × 출발일 {days}일. 결과 페이지를 바로 읽지 못하거나 목표가 이하인 표를 평가할 때 유료 모델 API를 호출합니다.
+              </p>
+            )}
             {formError && (
               <p className="error" role="alert">
                 {formError}
@@ -529,55 +634,84 @@ export default function App() {
           </div>
         </form>
 
-        <section className="content">
-          {!scan && (
-            <div className="empty-state">
-              <PlaneIcon size={56} />
-              <div>
-                <h2>조건을 정하고 검색을 눌러 주세요</h2>
-                <p className="secondary">날짜 조합마다 왕복 최저가를 찾아 목표가와 비교해 드립니다.</p>
-              </div>
-              <ol className="steps">
-                <li>
-                  <strong>01</strong>공항과 날짜 범위 고르기
-                </li>
-                <li>
-                  <strong>02</strong>조합당 1~2분 검색
-                </li>
-                <li>
-                  <strong>03</strong>추천 표를 Google Flights에서 확인
-                </li>
-              </ol>
+        <section className={isRunning ? 'board is-searching' : 'board'} aria-labelledby="board-title" aria-busy={isRunning}>
+          <div className="board-head">
+            <div className="board-title">
+              <h2 id="board-title" ref={boardTitleRef} tabIndex={-1}>
+                {results
+                  ? `결과 ${results.length}건`
+                  : isRunning && scan
+                    ? scan.status === 'queued'
+                      ? '검색 대기 중'
+                      : `${scan.job_count}건 검색 중`
+                    : '출발일 달력'}
+              </h2>
+              {results ? (
+                <p className="counts">
+                  {VERDICTS.map((verdict) => (
+                    <span key={verdict.tone}>
+                      <span className={`mark ${verdict.tone}`}>{verdict.label}</span> {results.filter((row) => verdictOf(row) === verdict).length}
+                    </span>
+                  ))}
+                </p>
+              ) : (
+                <p className="secondary" role={isRunning ? 'status' : undefined}>
+                  {isRunning
+                    ? '조합 하나에 최대 2분까지 걸립니다. 모든 검색이 끝나면 칸마다 가격이 한 번에 적힙니다. 이 창을 열어 두세요.'
+                    : '검색하면 출발일 칸마다 노선별 왕복 최저가가 적힙니다.'}
+                </p>
+              )}
             </div>
-          )}
+            <div className="legend" aria-hidden="true">
+              <span>
+                <i className="key-departure" /> 가는 날
+              </span>
+              <span>
+                <i className="key-return" /> 오는 날
+              </span>
+            </div>
+          </div>
 
-          {isRunning && scan && (
-            <>
-              <div className="status-panel" role="status">
-                <h2>{scan.status === 'queued' ? '검색 대기 중' : `${scan.job_count}건 검색 중`}</h2>
-                <div className="progress" aria-hidden="true">
-                  <div />
-                </div>
-                <p className="secondary">조합 하나에 최대 2분까지 걸립니다. 모든 검색이 끝나면 결과를 한 번에 보여 드려요. 이 창을 열어 두세요.</p>
-              </div>
-              <div className="skeletons" aria-hidden="true">
-                <div />
-                <div />
-                <div />
-              </div>
-            </>
+          {isRunning && (
+            <div className="progress" aria-hidden="true">
+              <div />
+            </div>
           )}
 
           {scan?.status === 'failed' && (
-            <div className="status-panel failed" role="alert">
-              <h2>검색에 실패했습니다</h2>
-              <p className="secondary">{scan.error ?? '알 수 없는 오류'}. 조건을 확인하고 다시 검색해 주세요.</p>
+            <div className="failed" role="alert">
+              <h3>검색에 실패했습니다</h3>
+              <p>{scan.error ?? '알 수 없는 오류'}. 조건을 확인하고 다시 검색해 주세요.</p>
             </div>
           )}
 
-          {results && <Results results={results} />}
+          {resultRoutes.length > 1 && (
+            <div className="route-filter" role="group" aria-label="노선 골라 보기">
+              {[null, ...resultRoutes].map((route) => (
+                <button key={route ?? 'all'} type="button" aria-pressed={focusRoute === route} onClick={() => setFocusRoute(route)}>
+                  {route ?? '전체'}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {plan ? <Calendar plan={plan} focusRoute={focusRoute} /> : <p className="secondary">첫 출발일을 고르면 달력에 검색 범위가 표시됩니다.</p>}
         </section>
-      </div>
+
+        {results && (
+          <section className="details" aria-labelledby="details-title">
+            <h2 id="details-title">목표가에 가까운 순</h2>
+            <ol className="rows">
+              {visibleRows.map((row) => (
+                <ResultRowView key={rowId(row)} row={row} />
+              ))}
+            </ol>
+            <p className="secondary">
+              목표가 이하를 먼저, 그다음 목표가에 가까운 순으로 정렬했습니다. 실시간 운임은 변동됩니다. 예약 전에 가격·수하물·일정을 다시 확인하세요.
+            </p>
+          </section>
+        )}
+      </main>
     </>
   )
 }

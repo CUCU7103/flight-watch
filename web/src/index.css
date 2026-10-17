@@ -1,289 +1,187 @@
+/* 탁상 달력: 회색 책상 위 흰 달력 용지, 먹색 잉크, 일요일 빨강·토요일 파랑.
+   행동(검색 버튼)과 펜 표시(오는 날 동그라미, 고른 결과 행)는 같은 빨강을 쓴다.
+   모서리는 각지게, 그림자 없이, 면은 선이 아니라 2px 틈과 톤 차이로 나눈다. */
 :root {
   color-scheme: light dark;
-  font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', system-ui, sans-serif;
-  font-size: 15px;
+  font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif;
+  font-size: 16px;
   line-height: 1.5;
-  --ground: #f4f5f7;
-  --surface: #ffffff;
-  --line: #dde1e7;
-  --line-strong: #c5cbd4;
-  --ink: #151a22;
-  --ink-2: #47505f;
-  --ink-3: #5a6372;
-  --accent: #1d4fa3;
-  --accent-hover: #153b7c;
-  --on-accent: #ffffff;
-  --accent-soft: #e6eefa;
-  --accent-soft-ink: #2d4a78;
-  --accent-line: #b9c8e3;
-  --review-bg: #fdeedf;
-  --review-ink: #8a3d04;
-  --drop-bg: #eef0f3;
-  --drop-ink: #3d4554;
-  --over: #9a4305;
-  --error: #b42318;
-  --disabled: #8a93a3;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  font-feature-settings: 'tnum';
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  --desk: #e9e7e1;
+  --paper: #ffffff;
+  --paper-2: #f5f4f0;
+  --ink: #111111;
+  --ink-2: #4a4945;
+  --ink-3: #6b6862;
+  --faint: #8f8b83;
+  --line: #c9c6be;
+  --red: #d62828;
+  --blue: #2b50c8;
+  /* 범위 밖 날짜 숫자(큰 글자 3:1 이상) */
+  --faint-number: #878379;
+  --faint-sun: #c86464;
+  --faint-sat: #6a7fd0;
+  /* 채운 행동 버튼. 다크 모드에서도 펜 빨강과 달리 진한 빨강을 유지한다. */
+  --action: #d62828;
+  --action-hover: #b31f1f;
+  --on-action: #ffffff;
+  --bar: #111111;
+  --on-bar: #ffffff;
+  --on-bar-2: #c9c6be;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #0f1217;
-    --surface: #181c23;
-    --line: #2b313b;
-    --line-strong: #3b4350;
-    --ink: #e8ebf0;
-    --ink-2: #b3bac6;
-    --ink-3: #9aa2b0;
-    --accent: #6f9ce6;
-    --accent-hover: #93b5ee;
-    --on-accent: #0f1217;
-    --accent-soft: #1c2c47;
-    --accent-soft-ink: #b9cdf0;
-    --accent-line: #34507f;
-    --review-bg: #3d2614;
-    --review-ink: #f5bd8b;
-    --drop-bg: #252a33;
-    --drop-ink: #c2c8d2;
-    --over: #f0a466;
-    --error: #ff8a80;
-    --disabled: #4b5260;
+    --desk: #121211;
+    --paper: #1c1c1b;
+    --paper-2: #252523;
+    --ink: #edece8;
+    --ink-2: #c6c4be;
+    --ink-3: #a3a09a;
+    --faint: #75726c;
+    --line: #45443f;
+    --red: #ff6b6b;
+    --blue: #8ea8ff;
+    --faint-number: #7d7a73;
+    --faint-sun: #b06262;
+    --faint-sat: #6b7cb8;
+    --action-hover: #e33b3b;
+    --bar: #000000;
+    --on-bar-2: #a3a09a;
   }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: var(--ground);
+  background: var(--desk);
   color: var(--ink);
+  caret-color: var(--red);
+  accent-color: var(--red);
+  scrollbar-color: var(--faint) var(--desk);
 }
 
-a {
-  color: var(--accent);
+::selection {
+  background: var(--action);
+  color: var(--on-action);
 }
 
+h1,
 h2,
 h3,
-p {
+p,
+dl,
+dd,
+ol {
   margin: 0;
 }
 
 h2 {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 24px;
-  box-sizing: border-box;
+a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+input,
+button {
+  font: inherit;
+  color: inherit;
 }
 
 .code {
-  font-family: var(--mono);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .secondary {
-  color: var(--ink-2);
+  color: var(--ink-3);
   font-size: 14px;
 }
 
 .hint {
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .hint.warning,
 .required {
-  color: var(--over);
+  color: var(--red);
   font-weight: 600;
 }
 
 .error {
-  color: var(--error);
+  color: var(--red);
   font-size: 14px;
-}
-
-.row-between {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-}
-
-/* 헤더 */
-.app-header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-}
-
-.header-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 24px;
-  padding-block: 16px;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--accent);
-}
-
-.brand span {
-  font-family: var(--mono);
   font-weight: 600;
-  font-size: 18px;
-  color: var(--ink);
 }
 
-/* 랜딩 히어로: HyperFrames로 만든 세계 노선 루프 영상(public/hero-flights.mp4) 위에 소개 카드 */
-.hero {
-  position: relative;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
-  height: clamp(360px, 56vh, 560px);
-  background: #e9eaec url('/hero-flights.jpg') 42% 50% / cover;
-  border-bottom: 1px solid var(--line);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.hero-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* 좁은 화면에서도 한국·일본 쪽이 남도록 중심을 살짝 왼쪽으로 */
-  object-position: 42% 50%;
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
 }
 
-/* 카드는 아래쪽에 둬서 한국·일본 출발 노선을 가리지 않게 한다 */
-.hero-inner {
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-}
-
-.hero-card {
-  max-width: 460px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  margin-block: 32px;
-  padding: 24px 28px;
-  background: var(--surface);
-  border-radius: 18px;
-  box-shadow: 0 10px 30px rgba(21, 26, 34, 0.14);
-}
-
-.hero-eyebrow {
-  color: var(--ink-2);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.hero-card h1 {
-  margin: 0;
-  font-size: clamp(28px, 4vw, 40px);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  word-break: keep-all;
-}
-
-.hero-card em {
-  font-style: normal;
-  color: var(--accent);
-}
-
-.hero-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--ink-2);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.hero-note::before {
-  content: '';
-  width: 28px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.hero-cta {
-  height: 46px;
-  padding: 0 24px;
-  text-decoration: none;
-}
-
-/* 지도 타일 이용 조건에 따른 출처 표기. 모바일에서 영상 양옆이 잘려도 보이도록 HTML로 둔다 */
-.hero-credit {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
-  color: #545962;
-  font-size: 11px;
-}
-
-#search {
-  scroll-margin-top: 24px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .hero-video {
-    filter: brightness(0.7);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  html {
-    scroll-behavior: smooth;
-  }
-}
-
-/* 폼 + 결과 2단. 좁은 화면에서는 위아래로 쌓인다. */
-.layout {
+/* 상단 검정 띠 */
+.topbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: baseline;
+  gap: 4px 24px;
+  padding: 14px 32px;
+  background: var(--bar);
+  color: var(--on-bar);
+}
+
+.topbar h1 {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.topbar p {
+  color: var(--on-bar-2);
+  font-size: 14px;
+}
+
+/* 폼 패널 + 달력. 상세 결과는 달력 아래에 이어진다. */
+.workspace {
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: start;
   gap: 24px;
-  padding-block: 24px;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 16px 32px 48px;
 }
 
 .panel {
-  flex: 1 1 340px;
-  max-width: 420px;
-  box-sizing: border-box;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 24px;
+  grid-row: span 2;
+  background: var(--paper);
+  padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
-}
-
-.content {
-  flex: 999 1 560px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-@media (max-width: 820px) {
-  .panel {
-    max-width: none;
-  }
+  gap: 16px;
 }
 
 /* 입력 필드 */
@@ -302,33 +200,33 @@ fieldset.field {
 
 .field > label,
 legend {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 legend {
   padding: 0;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
-.sublabel {
-  font-size: 13px;
+.sublabel,
+.field > label.sublabel {
+  font-size: 14px;
+  font-weight: 400;
   color: var(--ink-2);
 }
 
-input,
-button {
-  font: inherit;
-  color: inherit;
+.input {
+  height: 46px;
+  border: 1.5px solid var(--line);
+  padding: 0 14px;
+  background: var(--paper);
 }
 
-.input {
-  height: 44px;
-  box-sizing: border-box;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  padding: 0 14px;
-  background: var(--surface);
+.input:hover,
+.chips:hover,
+.stepper:hover {
+  border-color: var(--ink-3);
 }
 
 .input.with-unit {
@@ -346,13 +244,6 @@ button {
   background: transparent;
 }
 
-input:focus-visible,
-button:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .input.with-unit input:focus-visible,
 .chips input:focus-visible {
   outline: none;
@@ -360,17 +251,16 @@ a:focus-visible {
 
 .input.with-unit:focus-within,
 .chips:focus-within {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--red);
   outline-offset: 2px;
 }
 
-/* 도착 공항 칩 */
+/* 도착 공항 칩: 먹색 활자 조각. 기본 목표가가 없는 공항은 빨간 윤곽으로 표시한다. */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  gap: 6px;
+  border: 1.5px solid var(--line);
   padding: 6px;
 }
 
@@ -378,38 +268,43 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 0 4px 0 12px;
-  background: var(--accent-soft);
-  color: var(--accent-soft-ink);
-  border-radius: 8px;
+  min-height: 36px;
+  padding: 0 2px 0 12px;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .chip.needs-target {
-  background: var(--review-bg);
-  color: var(--review-ink);
+  background: var(--paper);
+  color: var(--red);
+  outline: 2px solid var(--red);
+  outline-offset: -2px;
 }
 
 .chip-note {
-  font-size: 12px;
+  font-size: 14px;
+  opacity: 0.85;
 }
 
 .chip button {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
   background: transparent;
   cursor: pointer;
+}
+
+.chip button:hover {
+  color: var(--red);
 }
 
 .chips input {
   flex: 1 1 120px;
   min-width: 0;
-  height: 40px;
+  height: 36px;
   border: 0;
   padding: 0 8px;
   background: transparent;
@@ -425,188 +320,430 @@ a:focus-visible {
 .stepper {
   display: flex;
   align-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  overflow: hidden;
+  border: 1.5px solid var(--line);
 }
 
 .stepper button {
   width: 44px;
   height: 44px;
   border: 0;
-  background: var(--ground);
+  background: var(--paper-2);
   font-size: 20px;
   cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.stepper button:hover:not(:disabled) {
+  background: var(--desk);
+}
+
+.stepper button:active:not(:disabled) {
+  background: var(--line);
 }
 
 .stepper button:disabled {
-  color: var(--disabled);
+  color: var(--faint);
   cursor: not-allowed;
 }
 
 .stepper output {
   flex: 1;
   text-align: center;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .date-preview {
-  background: var(--ground);
-  border-radius: 10px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  background: var(--paper-2);
   padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
-/* 검색 건수와 제출 버튼 */
+.date-preview dt {
+  color: var(--ink-3);
+}
+
+.date-preview dd {
+  font-weight: 700;
+  text-align: right;
+}
+
+/* 검색 예산과 제출 버튼 */
 .submit-area {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
+  background: var(--paper-2);
+  margin: 0 -24px -24px;
+  padding: 16px 24px 20px;
+}
+
+.budget-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 700;
 }
 
 .job-count {
-  font-size: 18px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .job-count.over {
-  color: var(--over);
+  color: var(--red);
 }
 
-.meter {
-  height: 6px;
-  background: var(--drop-bg);
-  border-radius: 3px;
-  overflow: hidden;
+.slots {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 3px;
 }
 
-.meter div {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
+.slots i {
+  height: 16px;
+  background: var(--desk);
+  transition: background-color 0.2s;
 }
 
-.meter div.over {
-  background: var(--over);
+.slots i.on {
+  background: var(--ink);
+}
+
+.slots.over i {
+  background: var(--red);
 }
 
 .primary-button {
-  height: 52px;
+  height: 56px;
   border: 0;
-  border-radius: 12px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--action);
+  color: var(--on-action);
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   cursor: pointer;
+  transition: background-color 0.15s, transform 0.1s;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--action-hover);
+}
+
+.primary-button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .primary-button:disabled {
-  background: var(--drop-bg);
-  color: var(--ink-2);
+  background: var(--desk);
+  color: var(--ink-3);
   cursor: not-allowed;
 }
 
-/* 빈 화면·진행·실패 상태 */
-.empty-state {
-  background: var(--surface);
-  border: 1px dashed var(--line-strong);
-  border-radius: 14px;
-  padding: 48px 32px;
+/* 달력 판 */
+.board {
+  container-type: inline-size;
+  background: var(--paper);
+  padding: 24px 28px 28px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
   gap: 20px;
-  color: var(--disabled);
+  min-width: 0;
 }
 
-.empty-state h2 {
+.board-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px 24px;
+}
+
+.board-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 62ch;
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-weight: 700;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend i {
+  width: 18px;
+  height: 18px;
+}
+
+.key-departure {
+  outline: 3px solid var(--ink);
+  outline-offset: -3px;
+}
+
+.key-return {
+  border: 2px solid var(--red);
+  border-radius: 50%;
+}
+
+.route-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.route-filter button {
+  min-width: 64px;
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  background: var(--paper-2);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.route-filter button:hover {
+  background: var(--desk);
+}
+
+.route-filter button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.months {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.month-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.month-number {
+  font-size: 88px;
+  font-weight: 800;
+  line-height: 0.85;
+  letter-spacing: -0.04em;
+}
+
+.month-label {
   font-size: 20px;
-  color: var(--ink);
-  margin-bottom: 6px;
+  font-weight: 700;
 }
 
-.steps {
-  margin: 0;
+.weekdays,
+.days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.weekdays {
+  margin-bottom: 4px;
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.weekdays .sun,
+.day.sun .day-number {
+  color: var(--red);
+}
+
+.weekdays .sat,
+.day.sat .day-number {
+  color: var(--blue);
+}
+
+.days {
   padding: 0;
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-  width: 100%;
-  max-width: 560px;
-  text-align: left;
 }
 
-.steps li {
-  background: var(--ground);
-  color: var(--ink);
-  border-radius: 10px;
-  padding: 14px;
-  font-size: 14px;
-}
-
-.steps strong {
-  display: block;
-  font-family: var(--mono);
-  color: var(--accent);
-}
-
-.status-panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 24px;
+.day {
+  min-height: 52px;
+  padding: 8px 10px 10px;
+  background: var(--paper-2);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 4px;
+  transition: background-color 0.15s;
 }
 
-.status-panel.failed h2 {
-  color: var(--error);
+.day.blank {
+  background: transparent;
+}
+
+/* 검색 범위 밖 날짜는 숫자만 흐리게 둔다. */
+.day:not(.is-departure, .is-return) .day-number {
+  color: var(--faint-number);
+}
+
+.day.sun:not(.is-departure, .is-return) .day-number {
+  color: var(--faint-sun);
+}
+
+.day.sat:not(.is-departure, .is-return) .day-number {
+  color: var(--faint-sat);
+}
+
+.day-number {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  margin: -0.15em 0 0 -0.25em;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+/* 가는 날: 칸을 먹색 테두리로 고른다. 오는 날: 날짜에 빨간 펜 동그라미. */
+.day.is-departure {
+  min-height: 104px;
+  background: var(--paper);
+  outline: 3px solid var(--ink);
+  outline-offset: -3px;
+}
+
+.day.is-return .day-number {
+  border-color: var(--red);
+}
+
+/* 칸 안의 가격. 판정은 인쇄 표식으로: 추천=채움, 검토=윤곽, 제외=취소선 */
+.fare {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  margin-left: -6px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity 0.2s;
+  animation: ink-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--order, 0) * 60ms);
+}
+
+.fare:hover .fare-price {
+  text-decoration: underline;
+}
+
+.fare-route {
+  font-weight: 800;
+}
+
+.fare .narrow {
+  display: none;
+}
+
+.fare.pick {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.fare.review {
+  outline: 1.5px solid var(--ink);
+  outline-offset: -1.5px;
+}
+
+.fare.drop .fare-price {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+
+.fare.problem {
+  color: var(--ink-3);
+}
+
+.fare[data-dim] {
+  opacity: 0.35;
+}
+
+.fare.pick[data-dim] {
+  background: transparent;
+  color: var(--ink);
+  outline: 1.5px solid var(--ink);
+  outline-offset: -1.5px;
+}
+
+@keyframes ink-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* 검색 중: 출발일 칸에 가격이 적힐 자리를 비워 둔다. */
+.board.is-searching .day.is-departure::after {
+  content: '';
+  width: 70%;
+  height: 14px;
+  margin-top: 4px;
+  background: var(--paper-2);
+  animation: pulse 1.6s ease-in-out infinite;
+  animation-delay: calc(var(--order, 0) * 120ms);
 }
 
 .progress {
-  height: 6px;
-  background: var(--accent-soft);
-  border-radius: 3px;
+  height: 4px;
+  background: var(--paper-2);
   overflow: hidden;
 }
 
 /* 서버가 진행 건수를 주지 않으므로 진행률 대신 미확정 막대를 보여 준다. */
 .progress div {
-  width: 40%;
+  width: 30%;
   height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-  animation: slide 1.6s ease-in-out infinite;
+  background: var(--ink);
+  animation: slide 1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
-.skeletons {
+.failed {
+  background: var(--paper-2);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  animation: pulse 1.6s ease-in-out infinite;
+  gap: 4px;
 }
 
-.skeletons div {
-  height: 132px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+.failed h3 {
+  color: var(--red);
+  font-size: 16px;
 }
 
 @keyframes slide {
@@ -614,206 +751,322 @@ a:focus-visible {
     transform: translateX(-100%);
   }
   to {
-    transform: translateX(250%);
+    transform: translateX(340%);
   }
 }
 
 @keyframes pulse {
   50% {
-    opacity: 0.45;
+    opacity: 0.35;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .progress div,
-  .skeletons {
-    animation: none;
+/* 좁은 달력: 가격을 만 원 단위로 줄이고 노선 코드를 위에 둔다. */
+@container (max-width: 640px) {
+  .board-head {
+    align-items: flex-start;
   }
 
-  /* 움직임을 줄이면 영상 대신 .hero 배경의 정지 포스터만 보인다 */
-  .hero-video {
+  .month-number {
+    font-size: 64px;
+  }
+
+  .weekdays {
+    padding: 0 4px;
+  }
+
+  .day {
+    min-height: 36px;
+    padding: 4px;
+  }
+
+  .day.is-departure {
+    min-height: 64px;
+  }
+
+  .day-number {
+    font-size: 16px;
+  }
+
+  .fare {
+    flex-direction: column;
+    margin-left: 0;
+    padding: 1px 3px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .fare .wide {
     display: none;
   }
+
+  .fare-route,
+  .fare .narrow {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .fare .narrow {
+    display: inline;
+  }
 }
 
-/* 결과 */
-.results-head {
+/* 상세 결과 */
+.details > p {
+  max-width: 70ch;
+}
+
+.details {
+  container-type: inline-size;
+  background: var(--paper);
+  padding: 24px 28px 28px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.results-head h2 {
-  font-size: 20px;
-}
-
-.pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.group h3 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink-2);
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 13px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.badge.pill {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 16px;
-  font-size: 14px;
-}
-
-/* 판정은 색상뿐 아니라 명도(진한 칩 / 연한 칩)와 글자로도 구분된다. */
-.badge.pick {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-
-.badge.review {
-  background: var(--review-bg);
-  color: var(--review-ink);
-}
-
-.badge.drop {
-  background: var(--drop-bg);
-  color: var(--drop-ink);
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px 24px;
-}
-
-.card-body {
-  flex: 1 1 260px;
+  gap: 16px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
-.card-title {
+.rows {
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.9fr) minmax(190px, 1fr) minmax(220px, 2fr) 200px;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 16px 20px;
+  background: var(--paper-2);
+  scroll-margin-top: 24px;
+}
+
+/* 달력 칸의 가격을 누르면 해당 행에 빨간 펜 표시 */
+.row:target {
+  outline: 3px solid var(--red);
+  outline-offset: -3px;
+}
+
+.row-route {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-}
-
-.card-title .code {
+  gap: 6px 10px;
   font-size: 16px;
 }
 
-.price-line {
+/* 날짜 범위는 한 줄로, 박 수·평가는 그 아래 줄에 */
+.row-dates {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 14px;
+  flex-direction: column;
+  font-size: 16px;
+}
+
+.date-range {
+  white-space: nowrap;
+}
+
+.row-price {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 14px;
 }
 
 .price {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .delta {
+  grid-column: 1 / -1;
   font-size: 14px;
   font-weight: 600;
 }
 
 .delta.under {
-  color: var(--accent);
+  color: var(--ink);
 }
 
 .delta.over {
-  color: var(--over);
-}
-
-.problem {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 14px;
   color: var(--ink-2);
 }
 
-.problem svg {
-  flex: 0 0 auto;
-  margin-top: 3px;
+.row-price .secondary {
+  grid-column: 1 / -1;
+}
+
+/* 길이 = 가격 ÷ 목표가. 가운데 빨간 눈금이 목표가다. */
+.delta-bar {
+  position: relative;
+  height: 8px;
+  max-width: 220px;
+  background: var(--desk);
+}
+
+.delta-bar span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+}
+
+.delta-bar.over span {
+  background: var(--faint);
+}
+
+.delta-bar::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--red);
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mark.pick {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.mark.review {
+  outline: 1.5px solid var(--ink);
+  outline-offset: -1.5px;
+}
+
+.mark.drop {
+  color: var(--ink-3);
+  outline: 1.5px solid var(--line);
+  outline-offset: -1.5px;
+}
+
+.row-notes {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.problem {
+  color: var(--ink-2);
+  font-weight: 600;
 }
 
 .link-button {
-  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   height: 44px;
   padding: 0 16px;
-  border-radius: 10px;
-  text-decoration: none;
   font-size: 14px;
-  font-weight: 600;
-  background: var(--surface);
-  color: var(--accent);
-  border: 1px solid var(--accent-line);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  outline: 1.5px solid var(--ink);
+  outline-offset: -1.5px;
+  transition: background-color 0.15s, color 0.15s;
 }
 
+.link-button:hover,
 .link-button.pick {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
+  background: var(--ink);
+  color: var(--paper);
 }
 
-.link-button.drop {
-  color: var(--ink-2);
-  border-color: var(--line);
+.link-button.pick:hover {
+  background: var(--action);
+  color: var(--on-action);
 }
 
-.link-button:hover {
-  border-color: var(--accent);
+/* 제외된 행은 달력 칸과 같이 가격을 회색 취소선으로 */
+.row.drop .price {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
 }
 
-/* 휴대폰에서는 링크 버튼을 카드 너비로 늘린다. */
-@media (max-width: 560px) {
-  .container {
-    padding: 0 16px;
+@media (prefers-reduced-motion: reduce) {
+  .fare,
+  .progress div,
+  .board.is-searching .day.is-departure::after {
+    animation: none;
   }
 
-  .layout {
-    padding-block: 16px;
+  * {
+    transition: none !important;
+  }
+}
+
+/* 상세 영역이 좁으면(창 너비가 아니라 영역 너비 기준) 행을 두 단으로 */
+@container (max-width: 900px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .row .link-button {
+    justify-self: start;
+  }
+}
+
+@container (max-width: 520px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 14px;
+  }
+
+  .row .link-button {
+    justify-self: stretch;
+  }
+}
+
+/* 넓은 화면에서는 옆 달력이 가는 날·오는 날을 보여 주므로 폼 안 요약은 숨긴다. */
+@media (min-width: 901px) {
+  .date-preview {
+    display: none;
+  }
+}
+
+/* 좁은 화면: 폼, 달력, 상세가 위아래로 쌓인다. */
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px 16px 40px;
+    gap: 16px;
   }
 
   .panel {
-    padding: 20px;
+    grid-row: auto;
   }
 
-  .link-button {
-    flex: 1 1 100%;
+  .topbar {
+    padding: 12px 16px;
+  }
+}
+
+@media (max-width: 560px) {
+  .panel,
+  .board,
+  .details {
+    padding: 20px 16px;
+  }
+
+  .submit-area {
+    margin: 0 -16px -20px;
+    padding: 18px 16px 20px;
   }
 }
