@@ -17,3 +17,10 @@ dist/
 .omc/
 node_modules/
 .omx/
+
+# 디자인 도구 작업 파일(impeccable·taste-skill). 제품 기록(PRODUCT.md, DESIGN.md, .impeccable/surfaces)은 커밋한다.
+.impeccable/mocks/
+.impeccable/review/
+.impeccable/decision-payload.json
+.taste-skill/
+.impeccable/questions/

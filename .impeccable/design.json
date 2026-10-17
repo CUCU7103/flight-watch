@@ -1,0 +1,887 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-17T05:12:40+00:00",
+  "title": "Design System: flight-watch",
+  "extensions": {
+    "colorMeta": {
+      "red": {
+        "role": "primary",
+        "displayName": "펜 빨강",
+        "canonical": "#d62828",
+        "oklch": "oklch(56.8% 0.208 27.1)",
+        "cssVar": "--red",
+        "mode": "light",
+        "tonalRamp": [
+          "#410000",
+          "#6a0000",
+          "#920000",
+          "#bb000a",
+          "#e43935",
+          "#ff685d",
+          "#ffa79b",
+          "#ffe0d9"
+        ]
+      },
+      "action": {
+        "role": "primary",
+        "displayName": "도장 빨강",
+        "canonical": "#d62828",
+        "oklch": "oklch(56.8% 0.208 27.1)",
+        "cssVar": "--action",
+        "mode": "light",
+        "tonalRamp": [
+          "#410000",
+          "#6a0000",
+          "#920000",
+          "#bb000a",
+          "#e43935",
+          "#ff685d",
+          "#ffa79b",
+          "#ffe0d9"
+        ]
+      },
+      "action-hover": {
+        "role": "primary",
+        "displayName": "도장 빨강(눌림)",
+        "canonical": "#b31f1f",
+        "oklch": "oklch(49.6% 0.183 27.1)",
+        "cssVar": "--action-hover",
+        "mode": "light",
+        "tonalRamp": [
+          "#3b0000",
+          "#630000",
+          "#8a0000",
+          "#b21d1e",
+          "#da4941",
+          "#ff7367",
+          "#ffaca1",
+          "#ffe2db"
+        ]
+      },
+      "on-action": {
+        "role": "primary",
+        "displayName": "도장 위 글자",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "cssVar": "--on-action",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "blue": {
+        "role": "secondary",
+        "displayName": "토요일 파랑",
+        "canonical": "#2b50c8",
+        "oklch": "oklch(48.2% 0.191 266.1)",
+        "cssVar": "--blue",
+        "mode": "light",
+        "tonalRamp": [
+          "#0f005b",
+          "#07007f",
+          "#132ea5",
+          "#2e53cc",
+          "#4c78f3",
+          "#6f9eff",
+          "#a5c7ff",
+          "#ddefff"
+        ]
+      },
+      "desk": {
+        "role": "neutral",
+        "displayName": "책상 회색",
+        "canonical": "#e9e7e1",
+        "oklch": "oklch(92.8% 0.008 91.5)",
+        "cssVar": "--desk",
+        "mode": "light",
+        "tonalRamp": [
+          "#0c0b07",
+          "#262521",
+          "#43423d",
+          "#63615c",
+          "#84827d",
+          "#a7a5a0",
+          "#cac9c5",
+          "#efeeed"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "달력 용지",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "cssVar": "--paper",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "paper-2": {
+        "role": "neutral",
+        "displayName": "바랜 용지",
+        "canonical": "#f5f4f0",
+        "oklch": "oklch(96.7% 0.005 95.1)",
+        "cssVar": "--paper-2",
+        "mode": "light",
+        "tonalRamp": [
+          "#0c0b09",
+          "#262522",
+          "#43423f",
+          "#62615e",
+          "#83827f",
+          "#a6a5a1",
+          "#cac9c7",
+          "#efeeed"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "먹",
+        "canonical": "#111111",
+        "oklch": "oklch(17.8% 0.000 89.9)",
+        "cssVar": "--ink",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "옅은 먹",
+        "canonical": "#4a4945",
+        "oklch": "oklch(40.5% 0.007 95.2)",
+        "cssVar": "--ink-2",
+        "mode": "light",
+        "tonalRamp": [
+          "#0c0b08",
+          "#262521",
+          "#43423e",
+          "#62615d",
+          "#83827e",
+          "#a6a5a1",
+          "#cac9c6",
+          "#efeeed"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "회먹",
+        "canonical": "#6b6862",
+        "oklch": "oklch(51.8% 0.010 84.6)",
+        "cssVar": "--ink-3",
+        "mode": "light",
+        "tonalRamp": [
+          "#0d0b07",
+          "#272520",
+          "#44423c",
+          "#64615b",
+          "#85827c",
+          "#a8a59e",
+          "#cbc9c5",
+          "#efeeec"
+        ]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "흐린 먹",
+        "canonical": "#8f8b83",
+        "oklch": "oklch(63.8% 0.013 84.6)",
+        "cssVar": "--faint",
+        "mode": "light",
+        "tonalRamp": [
+          "#0e0b06",
+          "#28251e",
+          "#45423a",
+          "#656159",
+          "#86827a",
+          "#a8a59d",
+          "#cbc9c3",
+          "#efeeec"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "괘선",
+        "canonical": "#c9c6be",
+        "oklch": "oklch(82.7% 0.012 89.7)",
+        "cssVar": "--line",
+        "mode": "light",
+        "tonalRamp": [
+          "#0d0b06",
+          "#27251f",
+          "#44423b",
+          "#64615a",
+          "#85827b",
+          "#a8a59d",
+          "#cbc9c4",
+          "#efeeec"
+        ]
+      },
+      "faint-number": {
+        "role": "neutral",
+        "displayName": "범위 밖 숫자",
+        "canonical": "#878379",
+        "oklch": "oklch(61.0% 0.016 88.7)",
+        "cssVar": "--faint-number",
+        "mode": "light",
+        "tonalRamp": [
+          "#0e0b05",
+          "#28251d",
+          "#454239",
+          "#656157",
+          "#868278",
+          "#a9a59b",
+          "#ccc9c2",
+          "#f0eeeb"
+        ]
+      },
+      "faint-sun": {
+        "role": "neutral",
+        "displayName": "범위 밖 일요일",
+        "canonical": "#c86464",
+        "oklch": "oklch(62.2% 0.128 21.4)",
+        "cssVar": "--faint-sun",
+        "mode": "light",
+        "tonalRamp": [
+          "#2f0000",
+          "#530005",
+          "#771922",
+          "#9d3d40",
+          "#c36060",
+          "#e78583",
+          "#f9b5b3",
+          "#ffe5e3"
+        ]
+      },
+      "faint-sat": {
+        "role": "neutral",
+        "displayName": "범위 밖 토요일",
+        "canonical": "#6a7fd0",
+        "oklch": "oklch(61.6% 0.125 271.3)",
+        "cssVar": "--faint-sat",
+        "mode": "light",
+        "tonalRamp": [
+          "#06003e",
+          "#131860",
+          "#2b3983",
+          "#485aa8",
+          "#677ccd",
+          "#8aa0ef",
+          "#b7c7fd",
+          "#e5eeff"
+        ]
+      },
+      "bar": {
+        "role": "neutral",
+        "displayName": "상단 띠",
+        "canonical": "#111111",
+        "oklch": "oklch(17.8% 0.000 89.9)",
+        "cssVar": "--bar",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "on-bar": {
+        "role": "neutral",
+        "displayName": "띠 위 글자",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "cssVar": "--on-bar",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "on-bar-2": {
+        "role": "neutral",
+        "displayName": "띠 위 보조 글자",
+        "canonical": "#c9c6be",
+        "oklch": "oklch(82.7% 0.012 89.7)",
+        "cssVar": "--on-bar-2",
+        "mode": "light",
+        "tonalRamp": [
+          "#0d0b06",
+          "#27251f",
+          "#44423b",
+          "#64615a",
+          "#85827b",
+          "#a8a59d",
+          "#cbc9c4",
+          "#efeeec"
+        ]
+      },
+      "red-dark": {
+        "role": "primary",
+        "displayName": "펜 빨강 (다크)",
+        "canonical": "#ff6b6b",
+        "oklch": "oklch(71.2% 0.181 22.8)",
+        "cssVar": "--red",
+        "mode": "dark",
+        "tonalRamp": [
+          "#3b0000",
+          "#620000",
+          "#890008",
+          "#b11d2c",
+          "#d9484c",
+          "#fe7271",
+          "#ffaca7",
+          "#ffe1de"
+        ]
+      },
+      "action-hover-dark": {
+        "role": "primary",
+        "displayName": "도장 빨강(눌림) (다크)",
+        "canonical": "#e33b3b",
+        "oklch": "oklch(60.7% 0.205 25.8)",
+        "cssVar": "--action-hover",
+        "mode": "dark",
+        "tonalRamp": [
+          "#400000",
+          "#690000",
+          "#910000",
+          "#ba0016",
+          "#e33b3b",
+          "#ff6962",
+          "#ffa89e",
+          "#ffe0da"
+        ]
+      },
+      "blue-dark": {
+        "role": "secondary",
+        "displayName": "토요일 파랑 (다크)",
+        "canonical": "#8ea8ff",
+        "oklch": "oklch(74.7% 0.129 270.4)",
+        "cssVar": "--blue",
+        "mode": "dark",
+        "tonalRamp": [
+          "#060040",
+          "#111762",
+          "#293985",
+          "#465aaa",
+          "#657ccf",
+          "#88a0f2",
+          "#b5c7fe",
+          "#e5eeff"
+        ]
+      },
+      "desk-dark": {
+        "role": "neutral",
+        "displayName": "책상 회색 (다크)",
+        "canonical": "#121211",
+        "oklch": "oklch(18.2% 0.002 106.6)",
+        "cssVar": "--desk",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeee"
+        ]
+      },
+      "paper-dark": {
+        "role": "neutral",
+        "displayName": "달력 용지 (다크)",
+        "canonical": "#1c1c1b",
+        "oklch": "oklch(22.6% 0.002 106.6)",
+        "cssVar": "--paper",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252524",
+          "#424241",
+          "#616160",
+          "#828281",
+          "#a5a5a4",
+          "#c9c9c8",
+          "#eeeeee"
+        ]
+      },
+      "paper-2-dark": {
+        "role": "neutral",
+        "displayName": "바랜 용지 (다크)",
+        "canonical": "#252523",
+        "oklch": "oklch(26.4% 0.004 106.6)",
+        "cssVar": "--paper-2",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#424240",
+          "#61615f",
+          "#828280",
+          "#a5a5a3",
+          "#c9c9c7",
+          "#eeeeee"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "먹 (다크)",
+        "canonical": "#edece8",
+        "oklch": "oklch(94.3% 0.005 95.1)",
+        "cssVar": "--ink",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0c0b09",
+          "#262522",
+          "#43423f",
+          "#62615e",
+          "#83827f",
+          "#a6a5a1",
+          "#cac9c7",
+          "#efeeed"
+        ]
+      },
+      "ink-2-dark": {
+        "role": "neutral",
+        "displayName": "옅은 먹 (다크)",
+        "canonical": "#c6c4be",
+        "oklch": "oklch(82.0% 0.009 91.5)",
+        "cssVar": "--ink-2",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0c0b07",
+          "#262520",
+          "#44423d",
+          "#63615c",
+          "#84827d",
+          "#a7a59f",
+          "#cac9c5",
+          "#efeeec"
+        ]
+      },
+      "ink-3-dark": {
+        "role": "neutral",
+        "displayName": "회먹 (다크)",
+        "canonical": "#a3a09a",
+        "oklch": "oklch(70.6% 0.009 84.6)",
+        "cssVar": "--ink-3",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0d0b07",
+          "#272520",
+          "#44423c",
+          "#64615b",
+          "#85827c",
+          "#a7a59f",
+          "#cbc9c5",
+          "#efeeec"
+        ]
+      },
+      "faint-dark": {
+        "role": "neutral",
+        "displayName": "흐린 먹 (다크)",
+        "canonical": "#75726c",
+        "oklch": "oklch(55.3% 0.010 84.6)",
+        "cssVar": "--faint",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0d0b07",
+          "#272520",
+          "#44423c",
+          "#64615b",
+          "#85827c",
+          "#a8a59f",
+          "#cbc9c5",
+          "#efeeec"
+        ]
+      },
+      "line-dark": {
+        "role": "neutral",
+        "displayName": "괘선 (다크)",
+        "canonical": "#45443f",
+        "oklch": "oklch(38.6% 0.008 97.5)",
+        "cssVar": "--line",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0c0b07",
+          "#262521",
+          "#43423d",
+          "#62615c",
+          "#83827d",
+          "#a6a5a0",
+          "#cac9c5",
+          "#efeeed"
+        ]
+      },
+      "faint-number-dark": {
+        "role": "neutral",
+        "displayName": "범위 밖 숫자 (다크)",
+        "canonical": "#7d7a73",
+        "oklch": "oklch(58.0% 0.011 87.5)",
+        "cssVar": "--faint-number",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0d0b06",
+          "#27251f",
+          "#44423b",
+          "#64615a",
+          "#85827b",
+          "#a8a59e",
+          "#cbc9c4",
+          "#efeeec"
+        ]
+      },
+      "faint-sun-dark": {
+        "role": "neutral",
+        "displayName": "범위 밖 일요일 (다크)",
+        "canonical": "#b06262",
+        "oklch": "oklch(58.5% 0.101 20.6)",
+        "cssVar": "--faint-sun",
+        "mode": "dark",
+        "tonalRamp": [
+          "#290000",
+          "#4b030e",
+          "#6e272a",
+          "#924748",
+          "#b76868",
+          "#db8d8b",
+          "#f0bab8",
+          "#ffe7e6"
+        ]
+      },
+      "faint-sat-dark": {
+        "role": "neutral",
+        "displayName": "범위 밖 토요일 (다크)",
+        "canonical": "#6b7cb8",
+        "oklch": "oklch(59.8% 0.094 271.3)",
+        "cssVar": "--faint-sat",
+        "mode": "dark",
+        "tonalRamp": [
+          "#040132",
+          "#161e52",
+          "#303d74",
+          "#4e5d97",
+          "#6e7fbb",
+          "#90a2dd",
+          "#bbc8f0",
+          "#e7eeff"
+        ]
+      },
+      "bar-dark": {
+        "role": "neutral",
+        "displayName": "상단 띠 (다크)",
+        "canonical": "#000000",
+        "oklch": "oklch(0.0% 0.000 0.0)",
+        "cssVar": "--bar",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "on-bar-2-dark": {
+        "role": "neutral",
+        "displayName": "띠 위 보조 글자 (다크)",
+        "canonical": "#a3a09a",
+        "oklch": "oklch(70.6% 0.009 84.6)",
+        "cssVar": "--on-bar-2",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0d0b07",
+          "#272520",
+          "#44423c",
+          "#64615b",
+          "#85827c",
+          "#a7a59f",
+          "#cbc9c5",
+          "#efeeec"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "월 숫자 하나. 좁은 달력에서 64px."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "날짜 숫자, 상세 행 가격, 10칸 예산 건수."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "섹션 제목, 월 이름, 스테퍼 값, 상단 워드마크(800)."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "입력값, 날짜 범위, 설명 문단(최대 70ch). 라벨은 같은 크기 700."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "칸 안 가격, 판정 표식, 범례, 보조 설명, 링크 버튼."
+      }
+    },
+    "shadows": [],
+    "elevationNote": "그림자 없음. 깊이는 desk → paper → paper-2 톤 층과 음수 outline-offset 안쪽 윤곽으로만 만든다.",
+    "motion": [
+      {
+        "name": "ink-in",
+        "value": "0.45s cubic-bezier(0.16, 1, 0.3, 1) both; from { opacity: 0; transform: translateY(6px) }; delay calc(var(--order) * 60ms)",
+        "purpose": "결과 가격이 가는 날 순서대로 잉크가 스미듯 나타난다."
+      },
+      {
+        "name": "pulse",
+        "value": "1.6s ease-in-out infinite; 50% { opacity: 0.35 }; delay calc(var(--order) * 120ms)",
+        "purpose": "검색 중 가는 날 칸의 가격 자리표시."
+      },
+      {
+        "name": "slide",
+        "value": "1.6s cubic-bezier(0.65, 0, 0.35, 1) infinite; translateX(-100%) → translateX(340%)",
+        "purpose": "진행 건수가 없는 미확정 진행 막대."
+      },
+      {
+        "name": "state-fast",
+        "value": "background-color 0.15s",
+        "purpose": "버튼·스테퍼·노선 필터·링크 버튼·날짜 칸의 상태 전환."
+      },
+      {
+        "name": "slot-fill",
+        "value": "background-color 0.2s",
+        "purpose": "예산 슬롯 채움, 칸 가격 투명도(노선 필터)."
+      },
+      {
+        "name": "press",
+        "value": "transform: translateY(1px) 0.1s",
+        "purpose": "검색 버튼 누름."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "@media (prefers-reduced-motion: reduce) { animation: none; transition: none !important }",
+        "purpose": "모든 애니메이션과 전환을 끈다."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "stack",
+        "value": "max-width: 900px",
+        "purpose": "폼·달력·상세를 한 단으로 쌓고 여백 16px."
+      },
+      {
+        "name": "wide",
+        "value": "min-width: 901px",
+        "purpose": "폼 안 날짜 요약을 숨긴다."
+      },
+      {
+        "name": "phone",
+        "value": "max-width: 560px",
+        "purpose": "패널·달력·상세 안쪽 여백 16px."
+      },
+      {
+        "name": "board-narrow",
+        "value": "@container (max-width: 640px)",
+        "purpose": "달력 칸 축소, 월 숫자 64px, 날짜 16px, 가격 만 원 단위."
+      },
+      {
+        "name": "details-two-col",
+        "value": "@container (max-width: 900px)",
+        "purpose": "상세 행 두 단."
+      },
+      {
+        "name": "details-one-col",
+        "value": "@container (max-width: 520px)",
+        "purpose": "상세 행 한 단, 링크 버튼 전체 폭."
+      }
+    ],
+    "focus": "outline: 2px solid var(--red); outline-offset: 2px (칩 묶음·단위 입력은 :focus-within으로 바깥 상자에)"
+  },
+  "components": [
+    {
+      "name": "검색 버튼",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "폼 맨 아래 단 하나의 채운 행동 버튼. 도장 빨강, 눌리면 1px 내려간다.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg>10건 검색</button>",
+      "css": ".ds-btn-primary { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; height: 56px; width: 100%; border: 0; border-radius: 0; background: var(--action, #d62828); color: var(--on-action, #ffffff); font-size: 16px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: background-color 0.15s, transform 0.1s; } .ds-btn-primary:hover { background: var(--action-hover, #b31f1f); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid var(--red, #d62828); outline-offset: 2px; } .ds-btn-primary:disabled { background: var(--desk, #e9e7e1); color: var(--ink-3, #6b6862); cursor: not-allowed; transform: none; }"
+    },
+    {
+      "name": "링크 버튼",
+      "kind": "button",
+      "refersTo": "link-button",
+      "description": "상세 행의 Google Flights 확인 링크. 기본은 먹색 윤곽, 추천 행은 먹색 채움이고 호버하면 도장 빨강.",
+      "html": "<div style=\"display:flex;gap:12px;flex-wrap:wrap\"><a class=\"ds-link-btn\" href=\"#\">Google Flights에서 확인 <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 17 17 7M8 7h9v9\"/></svg></a><a class=\"ds-link-btn ds-link-btn-pick\" href=\"#\">Google Flights에서 확인 <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 17 17 7M8 7h9v9\"/></svg></a></div>",
+      "css": ".ds-link-btn { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; font-size: 14px; font-weight: 700; color: var(--ink, #111111); text-decoration: none; white-space: nowrap; outline: 1.5px solid var(--ink, #111111); outline-offset: -1.5px; transition: background-color 0.15s, color 0.15s; } .ds-link-btn:hover, .ds-link-btn-pick { background: var(--ink, #111111); color: var(--paper, #ffffff); } .ds-link-btn-pick:hover { background: var(--action, #d62828); color: var(--on-action, #ffffff); } .ds-link-btn:focus-visible { outline: 2px solid var(--red, #d62828); outline-offset: 2px; }"
+    },
+    {
+      "name": "입력칸",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "1.5px 괘선 테두리의 각진 입력칸. 단위가 붙으면 바깥 상자에 포커스 윤곽.",
+      "html": "<label class=\"ds-input-unit\"><input class=\"ds-input-inner\" placeholder=\"노선별 기본값 사용\" inputmode=\"numeric\"><span>원</span></label>",
+      "css": ".ds-input-unit { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 14px; border: 1.5px solid var(--line, #c9c6be); background: var(--paper, #ffffff); color: var(--ink-3, #6b6862); font-size: 14px; } .ds-input-unit:hover { border-color: var(--ink-3, #6b6862); } .ds-input-unit:focus-within { outline: 2px solid var(--red, #d62828); outline-offset: 2px; } .ds-input-inner { flex: 1; min-width: 0; height: 100%; border: 0; padding: 0; background: transparent; font: inherit; font-size: 16px; color: var(--ink, #111111); caret-color: var(--red, #d62828); } .ds-input-inner:focus-visible { outline: none; }"
+    },
+    {
+      "name": "공항 칩",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "먹색 활자 조각 칩. 기본 목표가가 없는 공항은 빨간 윤곽.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip\"><b>FUK</b><span class=\"ds-chip-note\">기본 180,000원</span><button aria-label=\"FUK 삭제\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M6 6l12 12M18 6 6 18\"/></svg></button></span><span class=\"ds-chip ds-chip-needs\"><b>KIX</b><span class=\"ds-chip-note\">목표가 필요</span><button aria-label=\"KIX 삭제\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M6 6l12 12M18 6 6 18\"/></svg></button></span></div>",
+      "css": ".ds-chips { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1.5px solid var(--line, #c9c6be); } .ds-chips:hover { border-color: var(--ink-3, #6b6862); } .ds-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 2px 0 12px; background: var(--ink, #111111); color: var(--paper, #ffffff); } .ds-chip b { font-weight: 700; letter-spacing: 0.02em; } .ds-chip-note { font-size: 14px; } .ds-chip-needs { background: var(--paper, #ffffff); color: var(--red, #d62828); outline: 2px solid var(--red, #d62828); outline-offset: -2px; } .ds-chip button { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: inherit; cursor: pointer; } .ds-chip button:hover { color: var(--red, #d62828); } .ds-chip button:focus-visible { outline: 2px solid var(--red, #d62828); outline-offset: 2px; }"
+    },
+    {
+      "name": "스테퍼",
+      "kind": "input",
+      "refersTo": "stepper-button",
+      "description": "출발일 범위·박 수 스테퍼. 44px 정사각 −/+ 버튼과 가운데 굵은 값.",
+      "html": "<div class=\"ds-stepper\" role=\"group\" aria-label=\"머무는 기간\"><button aria-label=\"줄이기\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14\"/></svg></button><output>3박</output><button aria-label=\"늘리기\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14M12 5v14\"/></svg></button></div>",
+      "css": ".ds-stepper { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; display: flex; align-items: center; width: 180px; border: 1.5px solid var(--line, #c9c6be); color: var(--ink, #111111); } .ds-stepper:hover { border-color: var(--ink-3, #6b6862); } .ds-stepper button { width: 44px; height: 44px; border: 0; border-radius: 0; background: var(--paper-2, #f5f4f0); color: inherit; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.15s; } .ds-stepper button:hover:not(:disabled) { background: var(--desk, #e9e7e1); } .ds-stepper button:active:not(:disabled) { background: var(--line, #c9c6be); } .ds-stepper button:disabled { color: var(--faint, #8f8b83); cursor: not-allowed; } .ds-stepper button:focus-visible { outline: 2px solid var(--red, #d62828); outline-offset: 2px; } .ds-stepper output { flex: 1; text-align: center; font-size: 20px; font-weight: 700; }"
+    },
+    {
+      "name": "노선 필터",
+      "kind": "nav",
+      "refersTo": "route-filter",
+      "description": "결과 노선 토글. 선택된 노선은 먹색 채움, 나머지 노선의 칸 가격은 35%로 물러난다.",
+      "html": "<div class=\"ds-route-filter\" role=\"group\" aria-label=\"노선 골라 보기\"><button aria-pressed=\"true\">전체</button><button aria-pressed=\"false\">FUK</button><button aria-pressed=\"false\">NRT</button></div>",
+      "css": ".ds-route-filter { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; display: flex; flex-wrap: wrap; gap: 4px; } .ds-route-filter button { min-width: 64px; height: 40px; padding: 0 14px; border: 0; border-radius: 0; background: var(--paper-2, #f5f4f0); color: var(--ink, #111111); font: inherit; font-weight: 700; cursor: pointer; transition: background-color 0.15s; } .ds-route-filter button:hover { background: var(--desk, #e9e7e1); } .ds-route-filter button[aria-pressed='true'] { background: var(--ink, #111111); color: var(--paper, #ffffff); } .ds-route-filter button:focus-visible { outline: 2px solid var(--red, #d62828); outline-offset: 2px; }"
+    },
+    {
+      "name": "달력 칸과 가격 표식",
+      "kind": "custom",
+      "refersTo": "day-cell",
+      "description": "서명 컴포넌트. 2px 틈의 7열 달력, 가는 날은 먹색 윤곽 칸, 오는 날은 빨간 펜 동그라미, 칸 안 가격은 인쇄 표식(채움·윤곽·취소선).",
+      "html": "<ol class=\"ds-days\"><li class=\"ds-day ds-sun\"><span class=\"ds-num\">18</span></li><li class=\"ds-day ds-departure\"><span class=\"ds-num\">19</span><a class=\"ds-fare ds-pick\" href=\"#\"><b>FUK</b> 165,600원</a><a class=\"ds-fare ds-review\" href=\"#\"><b>NRT</b> 242,500원</a></li><li class=\"ds-day ds-departure\"><span class=\"ds-num\">20</span><a class=\"ds-fare ds-drop\" href=\"#\"><b>FUK</b> <s>252,400원</s></a></li><li class=\"ds-day ds-return\"><span class=\"ds-num\">22</span></li><li class=\"ds-day ds-sat ds-return\"><span class=\"ds-num\">24</span></li></ol>",
+      "css": ".ds-days { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; font-feature-settings: 'tnum'; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; padding: 0; margin: 0; list-style: none; color: var(--ink, #111111); } .ds-day { min-height: 52px; padding: 8px 10px 10px; background: var(--paper-2, #f5f4f0); display: flex; flex-direction: column; align-items: flex-start; gap: 4px; } .ds-num { display: inline-grid; place-items: center; min-width: 1.5em; height: 1.5em; margin: -0.15em 0 0 -0.25em; border: 2px solid transparent; border-radius: 50%; font-size: 24px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; } .ds-day:not(.ds-departure, .ds-return) .ds-num { color: var(--faint-number, #878379); } .ds-sun:not(.ds-departure, .ds-return) .ds-num { color: var(--faint-sun, #c86464); } .ds-sat .ds-num { color: var(--blue, #2b50c8); } .ds-departure { min-height: 104px; background: var(--paper, #ffffff); outline: 3px solid var(--ink, #111111); outline-offset: -3px; } .ds-return .ds-num { border-color: var(--red, #d62828); } .ds-fare { display: flex; gap: 0 6px; padding: 2px 6px; margin-left: -6px; font-size: 14px; font-weight: 600; color: inherit; text-decoration: none; animation: ds-ink-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; } .ds-fare b { font-weight: 800; } .ds-fare:hover { text-decoration: underline; } .ds-fare:focus-visible { outline: 2px solid var(--red, #d62828); outline-offset: 2px; } .ds-pick { background: var(--ink, #111111); color: var(--paper, #ffffff); } .ds-review { outline: 1.5px solid var(--ink, #111111); outline-offset: -1.5px; } .ds-drop s { color: var(--ink-3, #6b6862); } @keyframes ds-ink-in { from { opacity: 0; transform: translateY(6px); } } @media (prefers-reduced-motion: reduce) { .ds-fare { animation: none; } }"
+    },
+    {
+      "name": "판정 표식",
+      "kind": "chip",
+      "refersTo": "mark-pick",
+      "description": "추천=먹색 채움, 검토 필요=먹색 윤곽, 제외=회색 괘선 윤곽.",
+      "html": "<p class=\"ds-marks\"><span class=\"ds-mark ds-mark-pick\">추천</span> 1 <span class=\"ds-mark ds-mark-review\">검토 필요</span> 1 <span class=\"ds-mark ds-mark-drop\">제외</span> 8</p>",
+      "css": ".ds-marks { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; display: flex; align-items: center; gap: 6px 10px; font-weight: 700; color: var(--ink, #111111); } .ds-mark { display: inline-flex; align-items: center; height: 26px; padding: 0 9px; font-size: 14px; font-weight: 700; } .ds-mark-pick { background: var(--ink, #111111); color: var(--paper, #ffffff); } .ds-mark-review { outline: 1.5px solid var(--ink, #111111); outline-offset: -1.5px; } .ds-mark-drop { color: var(--ink-3, #6b6862); outline: 1.5px solid var(--line, #c9c6be); outline-offset: -1.5px; }"
+    },
+    {
+      "name": "목표가 대비 막대",
+      "kind": "custom",
+      "refersTo": "delta-bar",
+      "description": "길이 = 가격 ÷ 목표가 × 50%. 가운데 빨간 눈금이 목표가.",
+      "html": "<div class=\"ds-delta\"><span class=\"ds-price\">165,600원</span><span class=\"ds-bar\"><span style=\"width:46%\"></span></span><span class=\"ds-delta-text\">목표가보다 14,400원 낮음 (−8.0%)</span></div><div class=\"ds-delta ds-over\"><span class=\"ds-price\"><s>252,400원</s></span><span class=\"ds-bar\"><span style=\"width:70%\"></span></span><span class=\"ds-delta-text\">목표가보다 72,400원 높음 (+40.2%)</span></div>",
+      "css": ".ds-delta { font-family: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif; font-feature-settings: 'tnum'; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 14px; margin-bottom: 12px; color: var(--ink, #111111); } .ds-price { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; } .ds-over .ds-price { color: var(--ink-3, #6b6862); } .ds-bar { position: relative; height: 8px; max-width: 220px; background: var(--desk, #e9e7e1); } .ds-bar span { display: block; height: 100%; background: var(--ink, #111111); } .ds-over .ds-bar span { background: var(--faint, #8f8b83); } .ds-bar::after { content: ''; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--red, #d62828); } .ds-delta-text { grid-column: 1 / -1; font-size: 14px; font-weight: 600; } .ds-over .ds-delta-text { color: var(--ink-2, #4a4945); }"
+    },
+    {
+      "name": "10칸 예산 슬롯",
+      "kind": "custom",
+      "refersTo": "slot",
+      "description": "검색 건수만큼 칸이 먹색으로 차고, 한도를 넘으면 전부 빨강.",
+      "html": "<div class=\"ds-slots\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i><i></i><i></i></div>",
+      "css": ".ds-slots { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; width: 300px; } .ds-slots i { height: 16px; background: var(--desk, #e9e7e1); transition: background-color 0.2s; } .ds-slots i.on { background: var(--ink, #111111); } .ds-slots.over i { background: var(--red, #d62828); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "탁상 달력",
+    "overview": "결과 화면은 책상 위에 펼쳐 둔 한국식 탁상 달력이다. 회색 책상 바탕 위에 흰 달력 용지가 놓이고, 먹색 잉크로 날짜와 가격을 적는다. 일요일은 빨강, 토요일은 파랑이라는 달력의 오래된 약속을 그대로 따르고, 사람이 펜으로 표시하는 자리(오는 날 동그라미, 고른 결과 행, 목표가 눈금)와 행동(검색 버튼)에는 같은 빨강을 쓴다. 파란 SaaS 검색 바와 흰 결과 카드 목록이라는 항공권 검색 화면의 기본값은 의도적으로 버렸다.\n\n밀도는 높지만 위계는 단순하다. 서체는 Pretendard 하나뿐이고, 월 숫자와 날짜 숫자는 아주 크고 굵게, 나머지는 작고 조용하게 둔다. 판정은 색이 아니라 인쇄 표식으로 읽힌다. 추천은 먹색 채움, 검토는 윤곽, 제외는 회색 취소선이다. 막대의 길이는 곧 값(가격 ÷ 목표가)이고, 화면의 장식은 모두 데이터에서 나온다.\n\n모서리는 각지고 그림자는 없다. 면은 선보다 2px 틈과 종이 톤 차이로 나눈다. 해커툴이나 터미널 같은 인상, 장난스럽고 가벼운 인상은 피한다. 방향 계약은 가는 날을 \"칠한 칸\", 오는 날을 \"빨간 펜 테두리 칸\"으로 적었지만, 실제 빌드에서는 가는 날이 먹색 3px 윤곽을 두른 흰 용지 칸(주변 `paper-2`보다 한 톤 밝다)이고, 오는 날은 날짜 숫자에 두른 빨간 펜 동그라미다. 이 문서는 빌드를 기준으로 한다.",
+    "keyCharacteristics": [
+      "회색 책상(`desk`) 위 흰 용지(`paper`), 먹색 잉크(`ink`) 한 벌",
+      "일요일 빨강·토요일 파랑은 달력 관례로만 쓴다",
+      "Pretendard 단일 서체, 표 숫자(`tnum`), 아주 큰 월·날짜 숫자",
+      "모서리 0, 그림자 0, 칸은 2px 틈과 톤 차이로 구분",
+      "판정은 인쇄 표식(채움·윤곽·취소선), 길이는 곧 값",
+      "라이트·다크 모두 같은 구조, 다크에서는 책상과 용지가 먹지로 뒤집힌다"
+    ],
+    "rules": [
+      {
+        "name": "The Calendar Convention Rule",
+        "body": "파랑은 토요일에만 쓴다. 링크, 강조, 상태에 파랑을 쓰지 않는다. 일요일 빨강과 토요일 파랑은 달력의 약속이지 브랜드 액센트가 아니다.",
+        "section": "colors"
+      },
+      {
+        "name": "The Pen and Stamp Rule",
+        "body": "빨강은 두 갈래다. 표시하는 빨강(`red`)은 다크에서 밝아져 읽히고, 누르는 빨강(`action`)은 다크에서도 진한 도장색을 유지해 흰 글자 대비를 지킨다. 둘을 섞어 쓰지 않는다.",
+        "section": "colors"
+      },
+      {
+        "name": "The Verdict Is Not a Color Rule",
+        "body": "추천·검토·제외를 초록·노랑·빨강으로 칠하지 않는다. 판정은 먹색 채움·먹색 윤곽·회색 취소선으로만 구분한다.",
+        "section": "colors"
+      },
+      {
+        "name": "The Big Number Rule",
+        "body": "큰 글씨는 숫자에게만 준다. 월 숫자와 날짜 숫자가 화면에서 가장 크고, 문장은 20px을 넘지 않는다.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Face Rule",
+        "body": "Pretendard 하나만 쓴다. 공항 코드는 별도 서체가 아니라 700 굵기와 0.02em 자간으로 구분한다.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Paper Rule",
+        "body": "`box-shadow`를 쓰지 않는다. 떠 보여야 하는 것은 톤을 한 단 바꾸거나 안쪽 윤곽을 긋는다.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Square Except the Pen Rule",
+        "body": "모서리는 0이다. 둥근 것은 사람이 펜으로 그린 동그라미뿐이다.",
+        "section": "shapes"
+      },
+      {
+        "name": "The Seam Not Line Rule",
+        "body": "달력 칸과 결과 행은 2px 틈과 톤 차이로만 나눈다. 칸 사이에 구분선을 긋지 않는다.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do 새 화면도 회색 책상(`desk`) 위 흰 용지(`paper`) 면으로 시작하고, 안쪽 묶음은 `paper-2`로 한 단 가라앉힌다.",
+      "Do 판정은 먹색 채움(추천)·먹색 1.5px 윤곽(검토)·회색 취소선(제외) 세 표식으로만 나타낸다.",
+      "Do 강조 테두리는 음수 `outline-offset`의 안쪽 윤곽으로 그어 레이아웃을 흔들지 않는다.",
+      "Do 값의 크기는 길이로 보여 준다. 목표가 대비 막대처럼 기준점을 빨간 눈금으로 표시한다.",
+      "Do 포커스는 모든 컨트롤에서 2px 빨간 윤곽, 2px 띄움으로 통일한다.",
+      "Do 움직임은 `prefers-reduced-motion: reduce`에서 애니메이션과 전환을 모두 끈다.",
+      "Do 숫자에는 표 숫자(`tnum`)를 유지하고, 가장 큰 글자는 숫자에게 준다."
+    ],
+    "donts": [
+      "Don't `box-shadow`를 쓰지 않는다.",
+      "Don't 펜 동그라미(오는 날) 외에는 모서리를 둥글게 하지 않는다.",
+      "Don't 파랑을 토요일 밖에서 쓰지 않는다. 링크·버튼·상태색으로 파랑을 쓰면 달력 관례가 깨진다.",
+      "Don't 판정을 초록·노랑·빨강 신호등 색으로 칠하지 않는다.",
+      "Don't 달력 칸이나 결과 행 사이에 구분선을 긋지 않는다. 2px 틈과 톤 차이로 나눈다.",
+      "Don't 다크 모드에서 `action`을 펜 빨강(`red-dark`)으로 바꾸지 않는다. 채운 버튼은 진한 도장 빨강을 유지한다.",
+      "Don't 두 번째 서체를 들이지 않는다."
+    ]
+  }
+}
