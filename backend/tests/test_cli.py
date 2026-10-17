@@ -113,6 +113,19 @@ def test_verified_candidate_can_be_routed_in_dry_run(option, monkeypatch):
     assert rows[0]["notification"] == "DRY_RUN"
 
 
+@pytest.mark.parametrize(
+    "conditions",
+    [{"max_layover_hours": 12.5}, {"airport_change": True}, {"baggage_known": False, "max_layover_hours": 9}],
+)
+def test_hard_rules_discard_without_paid_evaluation(option, monkeypatch, conditions):
+    def forbidden(_):
+        raise AssertionError("하드 룰에 걸린 항공권은 평가하지 않는다")
+
+    monkeypatch.setattr(cli, "evaluate", forbidden)
+    rows = cli.process_results([ScanResult(option.job, "DONE", [replace(option, **conditions)])], dry_run=True)
+    assert (rows[0]["action"], rows[0].get("evaluation_error")) == ("DISCARD", None)
+
+
 def test_plan_only_creates_ten_jobs_without_key(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     assert cli.main(["--plan-only", "--output", str(tmp_path / "jobs.json")]) == 0

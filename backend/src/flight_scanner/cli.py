@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from .browser import dedicated_browser, scan
-from .evaluate import evaluate, parse_evaluation, route
+from .evaluate import evaluate, parse_evaluation, route, violates_hard_rules
 from .extract import cheapest_tab_price, extract_options
 from .models import DEFAULT_TARGETS_KRW, Evaluation, ScanJob, ScanResult, generate_jobs
 from .notify import notify
@@ -43,7 +43,8 @@ def process_results(
             continue
         option = min(result.options, key=lambda item: item.price_krw)
         row["selected"] = asdict(option)
-        if option.price_krw <= result.job.target_price_krw:
+        # 확인된 조건이 하드 룰에 걸리면 평가(유료) 없이 버린다. 수하물 미확인으로 평가를 못 해도 적용된다.
+        if not violates_hard_rules(option):
             row["action"] = "SAVE_TO_DAILY_DIGEST"
             if option.conditions_complete and (not offline or fixture_evaluation is not None):
                 try:

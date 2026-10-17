@@ -98,13 +98,17 @@ def evaluate(option: FlightOption) -> Evaluation:
     return parse_evaluation(post_json("https://api.typesafe.ai/v1/systemone", key, body))
 
 
-def route(evaluation: Evaluation, option: FlightOption) -> str:
-    if (
+def violates_hard_rules(option: FlightOption) -> bool:
+    """모델 평가와 무관하게 코드가 버리는 조건: 목표가 초과, 공항 변경, 8시간 이상 경유."""
+    return (
         option.price_krw > option.job.target_price_krw
-        or evaluation.next_action == "DISCARD"
         or option.airport_change is True
         or (option.max_layover_hours is not None and option.max_layover_hours >= 8)
-    ):
+    )
+
+
+def route(evaluation: Evaluation, option: FlightOption) -> str:
+    if violates_hard_rules(option) or evaluation.next_action == "DISCARD":
         return "DISCARD"
     if (
         option.conditions_complete
