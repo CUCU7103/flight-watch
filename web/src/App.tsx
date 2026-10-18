@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
+import { accessToken, arrivedToSetPassword, supabase, useSession } from './auth'
+import { Login, SetPassword } from './Login'
 
 // 백엔드 API 계약(backend/src/flight_scanner/api.py)과 맞춘 타입.
 type ScanSummary = {
@@ -35,6 +37,8 @@ type Itinerary = {
 }
 
 const POLL_MS = 2000
+// 배포 시 스캐너 서버 주소(예: https://scanner.example.com). 비우면 같은 출처의 /api(개발 서버 프록시)를 쓴다.
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
 const MAX_NIGHTS = 30
 
 // 판정은 색이 아니라 인쇄 표식으로 구분한다: 추천=채움, 검토 필요=윤곽, 제외=취소선.
@@ -171,8 +175,14 @@ class ApiError extends Error {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init)
+  const headers = new Headers(init?.headers)
+  const token = await accessToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(API_BASE + url, { ...init, headers })
   const body = await response.json().catch(() => ({}))
+  // 세션이 만료·취소되면 로그인 화면으로 돌려보낸다.
+  // 이미 무효인 토큰이므로 다른 기기 세션까지 끊지 않고 이 브라우저 세션만 지운다.
+  if (response.status === 401 && supabase) await supabase.auth.signOut({ scope: 'local' })
   if (!response.ok) {
     // HTTPException은 문자열 detail, 요청 형식 오류(pydantic)는 배열 detail을 준다.
     const message = typeof body.detail === 'string' ? body.detail : body.detail?.[0]?.msg
@@ -522,6 +532,15 @@ function ResultRowView({ row, scanId, index, canPlan }: { row: ResultRow; scanId
 }
 
 export default function App() {
+  const session = useSession()
+  const [needsPassword, setNeedsPassword] = useState(arrivedToSetPassword)
+  if (session === undefined) return null
+  if (supabase && session === null) return <Login />
+  if (needsPassword) return <SetPassword onDone={() => setNeedsPassword(false)} />
+  return <Workspace email={session?.user.email ?? null} />
+}
+
+function Workspace({ email }: { email: string | null }) {
   const [config, setConfig] = useState<Config | null>(null)
   const [origin, setOrigin] = useState('ICN')
   const [destinationChips, setDestinationChips] = useState<string[]>(['FUK', 'NRT'])
@@ -648,6 +667,14 @@ export default function App() {
       <header className="topbar">
         <h1>flight-watch</h1>
         <p>Google Flights 왕복 최저가를 날짜별로 찾아 목표가와 비교합니다 · 예약은 하지 않습니다</p>
+        {supabase && (
+          <div className="account">
+            {email && <span>{email}</span>}
+            <button type="button" onClick={() => supabase?.auth.signOut()}>
+              로그아웃
+            </button>
+          </div>
+        )}
       </header>
 
       <main className="workspace">

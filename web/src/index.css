@@ -176,6 +176,58 @@ a:focus-visible {
   font-size: 14px;
 }
 
+/* 상단 띠 오른쪽의 로그인 계정. 좁은 화면에서는 다음 줄로 내려간다. */
+.account {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: var(--on-bar-2);
+  font-size: 14px;
+}
+
+.account span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account button {
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  border: 1.5px solid var(--on-bar-2);
+  background: none;
+  color: var(--on-bar);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.account button:hover {
+  background: var(--on-bar);
+  color: var(--bar);
+}
+
+/* 로그인·회원가입 폼. 폼 패널 스타일을 그대로 쓰고 가운데에 좁게 둔다. */
+.auth {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-title {
+  font-size: 22px;
+  font-weight: 800;
+}
+
 /* 폼 패널 + 달력. 상세 결과는 달력 아래에 이어진다. */
 .workspace {
   display: grid;
