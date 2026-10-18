@@ -263,6 +263,7 @@ def test_config_shares_defaults_with_the_web():
         "default_targets_krw": {"FUK": 180_000, "NRT": 250_000},
         "max_jobs": MAX_JOBS,
         "max_days_ahead": 330,
+        "itinerary_enabled": False,
     }
 
 

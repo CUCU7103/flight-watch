@@ -21,6 +21,7 @@ from .browser import daemon_ready, dedicated_browser
 from .cli import process_results, run_jobs
 from .evaluate import parse_evaluation
 from .extract import cheapest_tab_price, extract_options
+from .itinerary import DEFAULT_GEMINI_MODEL, Planner, Trip, gemini_planner, outbound_arrival
 from .models import DEFAULT_TARGETS_KRW, ScanJob, ScanResult, generate_jobs
 
 # 검색은 서버 전체에서 1건씩만 돌고, 에이전트 경로로 넘어가면 유료 호출이 생기므로 CLI(최대 90일)보다 작게 막는다.
@@ -57,6 +58,14 @@ class ScanRequest(BaseModel):
         if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             raise ValueError("start는 YYYY-MM-DD 형식이어야 합니다")
         return value
+
+
+class ItineraryRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    scan_id: str
+    # 서버가 가진 결과 행을 가리킨다. 날짜·시각을 클라이언트에서 받지 않는다.
+    index: int = Field(ge=0)
 
 
 def public_row(row: dict) -> dict:
@@ -154,10 +163,12 @@ def create_app(
     requires_api_key: bool,
     today: date | None = None,
     on_shutdown: Callable[[], None] | None = None,
+    planner: Planner | None = None,
 ) -> FastAPI:
     """today는 출발일 검증 기준일이다. None이면 요청 시점의 오늘을 쓴다(fixture 재생·테스트용 고정값).
 
     on_shutdown은 서버 종료 시 호출된다(열어 둔 Chrome 정리).
+    planner는 여행 코스 생성기다. None이면 코스 기능을 끈다.
     """
 
     @asynccontextmanager
@@ -174,6 +185,8 @@ def create_app(
     scans: dict[str, Scan] = {}
     # dedicated_browser()가 프로세스 전역 os.environ을 바꾸므로 스캔은 동시에 1건만 돌린다.
     busy = threading.Lock()
+    # ponytail: 같은 여행 조건의 코스를 메모리에 보관해 무료 한도를 아낀다. 재시작하면 사라진다.
+    itineraries: dict[Trip, dict] = {}
 
     def execute(scan: Scan) -> None:
         results: list[dict] = []
@@ -231,7 +244,12 @@ def create_app(
     @app.get("/api/config")
     def get_config() -> dict:
         # 화면이 기본 목표가·작업 상한을 따로 하드코딩하지 않도록 백엔드 값을 내려준다.
-        return {"default_targets_krw": DEFAULT_TARGETS_KRW, "max_jobs": MAX_JOBS, "max_days_ahead": MAX_DAYS_AHEAD}
+        return {
+            "default_targets_krw": DEFAULT_TARGETS_KRW,
+            "max_jobs": MAX_JOBS,
+            "max_days_ahead": MAX_DAYS_AHEAD,
+            "itinerary_enabled": planner is not None,
+        }
 
     def find(scan_id: str) -> Scan:
         if scan_id not in scans:
@@ -247,18 +265,47 @@ def create_app(
         scan = find(scan_id)
         return {"id": scan.id, "status": scan.status, "results": scan.results}
 
+    @app.post("/api/itineraries")
+    def plan_itinerary(request: ItineraryRequest) -> dict:
+        # 코스 생성은 브라우저·os.environ을 쓰지 않으므로 스캔 잠금(busy)과 무관하게 돈다.
+        if planner is None:
+            raise HTTPException(503, "GEMINI_API_KEY가 설정되지 않았습니다")
+        scan = find(request.scan_id)
+        if request.index >= len(scan.results) or "selected" not in scan.results[request.index]:
+            raise HTTPException(422, "확인된 항공권이 있는 결과에만 코스를 만들 수 있습니다")
+        row = scan.results[request.index]
+        job = row["job"]
+        arrival = outbound_arrival(row["selected"]["evidence"])
+        trip = Trip(job["destination"], job["departure_date"], job["return_date"], arrival)
+        if trip not in itineraries:
+            try:
+                itineraries[trip] = planner(trip).model_dump()
+            except ValueError:
+                raise HTTPException(502, "모델이 올바른 형식의 코스를 만들지 못했습니다. 다시 시도해 주세요") from None
+            except Exception as exc:
+                # 공급자 응답 본문이 남지 않도록 상태 코드·예외 타입명만 쓴다.
+                if getattr(exc, "status_code", None) == 429 or getattr(exc, "code", None) == 429:
+                    raise HTTPException(429, "Gemini 무료 사용 한도를 넘었습니다. 잠시 뒤 다시 시도해 주세요") from None
+                raise HTTPException(502, f"코스 생성에 실패했습니다 ({type(exc).__name__})") from None
+        return {"trip": {**asdict(trip), "nights": trip.nights}, "itinerary": itineraries[trip]}
+
     return app
 
 
 def _default_app() -> FastAPI:
+    # 코스 생성은 키가 있을 때만 켠다(fixture 재생에서도 키를 직접 넣었을 때만 Gemini를 부른다).
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    planner = gemini_planner(gemini_key, os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)) if gemini_key else None
     # 개발·E2E 확인용: 경로를 주면 브라우저와 유료 API 없이 fixture를 재생한다.
     fixture = os.environ.get("FLIGHT_WATCH_FIXTURE")
     if fixture:
         # 저장된 출발일이 지나도 재생할 수 있도록 기준일을 출발 전날로 고정한다.
         departure = date.fromisoformat(json.loads(Path(fixture).read_text())["job"]["departure_date"])
-        return create_app(fixture_runner(Path(fixture)), requires_api_key=False, today=departure - timedelta(days=1))
+        return create_app(
+            fixture_runner(Path(fixture)), requires_api_key=False, today=departure - timedelta(days=1), planner=planner
+        )
     browser = WarmBrowser()
-    return create_app(live_runner(browser), requires_api_key=True, on_shutdown=browser.close)
+    return create_app(live_runner(browser), requires_api_key=True, on_shutdown=browser.close, planner=planner)
 
 
 app = _default_app()
