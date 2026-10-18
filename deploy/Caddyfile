@@ -1,0 +1,4 @@
+# SCANNER_HOST(예: 158-180-1-2.sslip.io)로 Let's Encrypt 인증서를 자동 발급받아 스캐너로 넘긴다.
+{$SCANNER_HOST} {
+	reverse_proxy scanner:8000
+}

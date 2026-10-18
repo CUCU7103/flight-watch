@@ -463,6 +463,9 @@ def dedicated_browser():
                     f"--user-data-dir={profile}",
                     "--no-first-run",
                     "--no-default-browser-check",
+                    # Docker 기본 seccomp는 Chromium 샌드박스의 네임스페이스 생성을 막는다.
+                    # 컨테이너(비root, 추가 권한 없음)가 격리를 맡는 이미지에서만 CHROME_NO_SANDBOX=1로 끈다.
+                    *(["--no-sandbox"] if os.environ.get("CHROME_NO_SANDBOX") == "1" else []),
                     "about:blank",
                 ],
                 stdout=subprocess.DEVNULL,

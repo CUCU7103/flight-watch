@@ -1,0 +1,28 @@
+# Oracle Cloud VM 한 대에서 스캐너와 HTTPS 프록시(Caddy)를 띄운다. 값은 같은 폴더의 .env에서 읽는다.
+services:
+  scanner:
+    build: ../backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Caddy가 원래 Host를 그대로 넘기므로 공개 호스트 하나만 허용하면 된다.
+      FLIGHT_WATCH_ALLOWED_HOSTS: ${SCANNER_HOST}
+    # Chromium은 기본 64MB /dev/shm에서 큰 페이지를 그리다 죽는다.
+    shm_size: 1gb
+    # 종료된 Chromium 자식 프로세스를 거둬 좀비로 남지 않게 한다.
+    init: true
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SCANNER_HOST: ${SCANNER_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+
+volumes:
+  caddy_data:
