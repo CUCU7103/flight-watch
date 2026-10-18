@@ -26,7 +26,13 @@ type ResultRow = {
   cheapest_tab_krw: number | null
 }
 
-type Config = { default_targets_krw: Record<string, number>; max_jobs: number; max_days_ahead: number }
+type Config = { default_targets_krw: Record<string, number>; max_jobs: number; max_days_ahead: number; itinerary_enabled: boolean }
+
+// POST /api/itineraries 응답(backend/src/flight_scanner/itinerary.py).
+type Itinerary = {
+  trip: { arrival_time: string | null; nights: number }
+  itinerary: { area: string; days: { day: number; title: string; stops: { slot: string; place: string; note: string }[] }[] }
+}
 
 const POLL_MS = 2000
 const MAX_NIGHTS = 30
@@ -376,8 +382,64 @@ function naverSearchUrl(job: ResultRow['job']) {
   return `https://flight.naver.com/flights/international/${job.origin}-${job.destination}-${compact(job.departure_date)}/${job.destination}-${job.origin}-${compact(job.return_date)}?adult=1&fareType=Y`
 }
 
-function ResultRowView({ row }: { row: ResultRow }) {
+// 모델이 만든 코스는 링크 없이 텍스트로만 보여 준다.
+function ItineraryView({ plan }: { plan: Itinerary }) {
+  const { trip, itinerary } = plan
+  return (
+    <div className="itinerary">
+      <h3>
+        {itinerary.area} · {trip.nights}박 {trip.nights + 1}일 코스
+      </h3>
+      <p className="secondary">
+        {trip.arrival_time ? `${trip.arrival_time} 도착 기준` : '도착 시각을 확인하지 못해 오후 도착으로 가정'} · 귀국편 시각은 미확인이라 마지막 날은 오전만
+      </p>
+      <ol className="itinerary-days">
+        {itinerary.days.map((day) => (
+          <li key={day.day}>
+            <strong>
+              {day.day}일차 · {day.title}
+            </strong>
+            <ul>
+              {day.stops.map((stop, index) => (
+                <li key={index}>
+                  <span className="slot">{stop.slot}</span> {stop.place}
+                  <span className="secondary"> — {stop.note}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+      <p className="secondary">AI가 만든 참고용 코스입니다. 운영 시간·휴무·이동 시간은 직접 확인하세요.</p>
+    </div>
+  )
+}
+
+function ResultRowView({ row, scanId, index, canPlan }: { row: ResultRow; scanId: string; index: number; canPlan: boolean }) {
   const { job, selected } = row
+  const [plan, setPlan] = useState<Itinerary | null>(null)
+  const [planState, setPlanState] = useState<'idle' | 'loading' | 'open'>('idle')
+  const [planError, setPlanError] = useState<string | null>(null)
+
+  async function togglePlan() {
+    if (planState === 'open') return setPlanState('idle')
+    if (plan) return setPlanState('open')
+    setPlanState('loading')
+    setPlanError(null)
+    try {
+      const body = await requestJson<Itinerary>('/api/itineraries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scan_id: scanId, index }),
+      })
+      setPlan(body)
+      setPlanState('open')
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : '코스를 만들지 못했습니다')
+      setPlanState('idle')
+    }
+  }
+
   const verdict = verdictOf(row)
   const problem = problemOf(row)
   const isUnderTarget = selected !== undefined && selected.price_krw <= job.target_price_krw
@@ -421,6 +483,11 @@ function ResultRowView({ row }: { row: ResultRow }) {
             </svg>
           </a>
         )}
+        {selected && canPlan && (
+          <button type="button" className="link-button" aria-expanded={planState === 'open'} disabled={planState === 'loading'} onClick={togglePlan}>
+            {planState === 'loading' ? '코스 만드는 중…' : planState === 'open' ? '코스 접기' : '여행 코스 보기'}
+          </button>
+        )}
         {/* 네이버는 수집하지 않고(robots.txt·봇 차단) 같은 조건의 검색 결과를 직접 열어 비교만 한다. */}
         <a className="link-button" href={naverSearchUrl(job)} target="_blank" rel="noreferrer">
           네이버에서 보기
@@ -444,6 +511,12 @@ function ResultRowView({ row }: { row: ResultRow }) {
           {row.evaluation_error && <p className="secondary">모델 평가에 실패해 코드 규칙으로만 판정했습니다.</p>}
         </div>
       )}
+      {planError && (
+        <p className="row-notes problem" role="alert">
+          {planError}
+        </p>
+      )}
+      {plan && planState === 'open' && <ItineraryView plan={plan} />}
     </li>
   )
 }
@@ -794,7 +867,7 @@ export default function App() {
             <h2 id="details-title">목표가에 가까운 순</h2>
             <ol className="rows">
               {visibleRows.map((row) => (
-                <ResultRowView key={rowId(row)} row={row} />
+                <ResultRowView key={`${scanId}-${rowId(row)}`} row={row} scanId={scanId ?? ''} index={results.indexOf(row)} canPlan={config?.itinerary_enabled === true} />
               ))}
             </ol>
             <p className="secondary">

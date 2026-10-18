@@ -1048,6 +1048,61 @@ legend {
   color: var(--on-action);
 }
 
+button.link-button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button.link-button:disabled {
+  cursor: progress;
+  color: var(--ink-3);
+}
+
+.itinerary {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.itinerary h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.itinerary-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.itinerary-days ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.itinerary-days li li {
+  padding: 2px 0;
+}
+
+.slot {
+  display: inline-block;
+  min-width: 2.5em;
+  font-weight: 700;
+}
+
 /* 제외된 행은 달력 칸과 같이 가격을 회색 취소선으로 */
 .row.drop .price {
   color: var(--ink-3);
