@@ -271,3 +271,82 @@ def test_unknown_scan_is_not_found():
     client = client_for(lambda jobs: [])
     assert client.get("/api/scans/missing").status_code == 404
     assert client.get("/api/scans/missing/results").status_code == 404
+
+
+def auth_client(tokens: dict[str, str]) -> TestClient:
+    """토큰 → 사용자 id 표로 로그인을 흉내 낸다. 표에 없으면 유효하지 않은 토큰이다."""
+    app = create_app(fixture_runner(FIXTURE), requires_api_key=False, today=TODAY, authenticate=tokens.get)
+    return TestClient(app, base_url="http://localhost")
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic alice-token"}])
+def test_requests_without_a_valid_login_are_rejected(headers):
+    client = auth_client({"alice-token": "alice"})
+    assert client.get("/api/config", headers=headers).status_code == 401
+    assert client.post("/api/scans", json=FIXTURE_REQUEST, headers=headers).status_code == 401
+
+
+def test_scans_are_visible_only_to_their_owner():
+    client = auth_client({"alice-token": "alice", "bob-token": "bob"})
+    alice, bob = {"Authorization": "Bearer alice-token"}, {"Authorization": "Bearer bob-token"}
+
+    scan_id = client.post("/api/scans", json=FIXTURE_REQUEST, headers=alice).json()["id"]
+    client.headers.update(alice)
+    assert wait_until_finished(client, scan_id)["status"] == "done"
+    assert client.get(f"/api/scans/{scan_id}/results").status_code == 200
+    assert client.get(f"/api/scans/{scan_id}", headers=bob).status_code == 404
+    assert client.get(f"/api/scans/{scan_id}/results", headers=bob).status_code == 404
+
+
+def test_login_server_failure_does_not_let_requests_through():
+    def broken(token):
+        raise httpx.ConnectError("down")
+
+    app = create_app(fixture_runner(FIXTURE), requires_api_key=False, today=TODAY, authenticate=broken)
+    client = TestClient(app, base_url="http://localhost")
+    assert client.get("/api/config", headers={"Authorization": "Bearer any"}).status_code == 503
+
+
+def test_external_access_requires_login():
+    with pytest.raises(ValueError):
+        create_app(fixture_runner(FIXTURE), requires_api_key=False, allowed_hosts=["scanner.example.com"])
+    with pytest.raises(ValueError):
+        create_app(fixture_runner(FIXTURE), requires_api_key=False, cors_origins=["https://app.example.com"])
+
+
+def test_supabase_authenticator_caches_valid_tokens_and_rejects_invalid_ones(monkeypatch):
+    calls = []
+
+    def fake_get(url, headers, timeout):
+        calls.append((url, headers))
+        status = 200 if headers["Authorization"] == "Bearer good" else 403
+        return httpx.Response(status, json={"id": "user-1"}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    authenticate = api.supabase_authenticator("https://ref.supabase.co/", "publishable")
+    assert authenticate("good") == authenticate("good") == "user-1"
+    assert authenticate("bad") is None
+    assert len(calls) == 2  # 성공한 토큰은 다시 묻지 않는다
+    expected_headers = {"apikey": "publishable", "Authorization": "Bearer good"}
+    assert calls[0] == ("https://ref.supabase.co/auth/v1/user", expected_headers)
+
+
+def test_supabase_authenticator_treats_rate_limit_as_failure(monkeypatch):
+    monkeypatch.setattr(
+        httpx, "get", lambda url, headers, timeout: httpx.Response(429, request=httpx.Request("GET", url))
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        api.supabase_authenticator("https://ref.supabase.co", "publishable")("token")
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"SUPABASE_URL": "https://ref.supabase.co"}, {"FLIGHT_WATCH_ALLOWED_HOSTS": "scanner.example.com"}],
+)
+def test_partial_deploy_settings_refuse_to_start(monkeypatch, env):
+    for name in ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "FLIGHT_WATCH_ALLOWED_HOSTS", "FLIGHT_WATCH_CORS_ORIGINS"]:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(RuntimeError):
+        api._access_options()

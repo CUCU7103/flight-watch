@@ -5,6 +5,7 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractContextManager, ExitStack, asynccontextmanager
@@ -13,7 +14,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
@@ -33,6 +36,14 @@ MAX_DAYS_AHEAD = 330
 
 # 작업 목록을 받아 process_results 형태의 행(dict) 목록을 돌려주는 함수.
 Runner = Callable[[list[ScanJob]], list[dict]]
+# 액세스 토큰을 확인해 사용자 id를 돌려준다. 유효하지 않은 토큰이면 None, 확인 서버 오류면 예외.
+Authenticator = Callable[[str], str | None]
+
+LOOPBACK_HOSTS = ["127.0.0.1", "localhost"]
+# 인증을 켜지 않은 로컬 실행에서 모든 검색의 소유자로 쓴다.
+LOCAL_USER = "local"
+# 성공한 토큰 확인을 보관하는 시간. 화면이 2초마다 폴링하므로 매번 Supabase를 부르지 않는다.
+AUTH_CACHE_SECONDS = 60
 
 
 AirportCode = Annotated[str, StringConstraints(pattern=r"^[A-Za-z]{3}$")]
@@ -79,6 +90,7 @@ def public_row(row: dict) -> dict:
 @dataclass
 class Scan:
     id: str
+    owner: str
     jobs: list[ScanJob]
     status: str = "queued"
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -95,6 +107,38 @@ class Scan:
             "job_count": len(self.jobs),
             "error": self.error,
         }
+
+
+def supabase_authenticator(url: str, api_key: str) -> Authenticator:
+    """Supabase Auth(/auth/v1/user)에 토큰을 물어 확인한다. 서명 방식(HS256·비대칭 키)과 무관하게 동작한다."""
+    # ponytail: 프로세스 메모리 캐시라 로그아웃한 토큰도 최대 AUTH_CACHE_SECONDS 동안 통과한다.
+    # 즉시 차단이 필요하면 캐시를 없앤다.
+    cache: dict[str, tuple[str, float]] = {}
+    lock = threading.Lock()
+
+    def authenticate(token: str) -> str | None:
+        now = time.monotonic()
+        with lock:
+            hit = cache.get(token)
+        if hit is not None and hit[1] > now:
+            return hit[0]
+        response = httpx.get(
+            f"{url.rstrip('/')}/auth/v1/user",
+            headers={"apikey": api_key, "Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+        # 429(요청 한도)는 토큰 문제가 아니므로 거절이 아니라 확인 실패(예외)로 둔다.
+        if 400 <= response.status_code < 500 and response.status_code != 429:
+            return None
+        response.raise_for_status()
+        user_id = str(response.json()["id"])
+        with lock:
+            for expired in [key for key, (_, until) in cache.items() if until <= now]:
+                del cache[expired]
+            cache[token] = (user_id, now + AUTH_CACHE_SECONDS)
+        return user_id
+
+    return authenticate
 
 
 class WarmBrowser:
@@ -164,12 +208,37 @@ def create_app(
     today: date | None = None,
     on_shutdown: Callable[[], None] | None = None,
     planner: Planner | None = None,
+    authenticate: Authenticator | None = None,
+    allowed_hosts: list[str] | None = None,
+    cors_origins: list[str] | None = None,
 ) -> FastAPI:
     """today는 출발일 검증 기준일이다. None이면 요청 시점의 오늘을 쓴다(fixture 재생·테스트용 고정값).
 
     on_shutdown은 서버 종료 시 호출된다(열어 둔 Chrome 정리).
     planner는 여행 코스 생성기다. None이면 코스 기능을 끈다.
+    authenticate가 있으면 모든 /api 요청에 로그인 토큰을 요구하고 검색을 사용자별로 나눈다.
+    allowed_hosts·cors_origins로 외부 접근을 여는 것은 인증이 있을 때만 허용한다.
     """
+    hosts = allowed_hosts or LOOPBACK_HOSTS
+    if authenticate is None and (set(hosts) - set(LOOPBACK_HOSTS) or cors_origins):
+        raise ValueError("로그인 확인 없이 외부 호스트·출처를 열 수 없습니다")
+
+    def current_user(authorization: Annotated[str | None, Header()] = None) -> str:
+        if authenticate is None:
+            return LOCAL_USER
+        scheme, _, token = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(401, "로그인이 필요합니다")
+        try:
+            user = authenticate(token)
+        except Exception:
+            # 확인 서버 오류는 통과시키지 않는다(fail-closed). 응답 본문은 남기지 않는다.
+            raise HTTPException(503, "로그인을 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요") from None
+        if user is None:
+            raise HTTPException(401, "로그인이 만료되었습니다. 다시 로그인해 주세요")
+        return user
+
+    CurrentUser = Annotated[str, Depends(current_user)]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -178,9 +247,18 @@ def create_app(
             # Chrome 기동 중이면 close()가 잠금을 수십 초 기다릴 수 있으므로 이벤트 루프 밖에서 기다린다.
             await asyncio.to_thread(on_shutdown)
 
-    app = FastAPI(title="flight-watch", lifespan=lifespan)
-    # 인증이 없으므로 loopback 이름만 받아 DNS rebinding으로 외부 페이지가 호출하는 경로를 막는다.
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
+    # 앱 단위 의존성이라 앞으로 추가하는 경로도 빠짐없이 로그인을 요구한다.
+    app = FastAPI(title="flight-watch", lifespan=lifespan, dependencies=[Depends(current_user)])
+    # 인증이 없으면 loopback 이름만 받아 DNS rebinding으로 외부 페이지가 호출하는 경로를 막는다.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
+    if cors_origins:
+        # 토큰은 쿠키가 아니라 Authorization 헤더로 오므로 credentials는 켜지 않는다.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type"],
+        )
     # ponytail: 메모리 보관이라 재시작하면 사라지고 계속 쌓인다. 이력이 필요해지면 SQLite로 옮긴다.
     scans: dict[str, Scan] = {}
     # dedicated_browser()가 프로세스 전역 os.environ을 바꾸므로 스캔은 동시에 1건만 돌린다.
@@ -205,7 +283,7 @@ def create_app(
             scan.status = status
 
     @app.post("/api/scans", status_code=202)
-    def start_scan(request: ScanRequest) -> dict:
+    def start_scan(request: ScanRequest, user: CurrentUser) -> dict:
         origin = request.origin.upper()
         destinations = [code.upper() for code in request.destinations]
         price = request.target_price_krw
@@ -228,7 +306,7 @@ def create_app(
             raise HTTPException(503, "TYPESAFE_API_KEY가 설정되지 않았습니다")
         if not busy.acquire(blocking=False):
             raise HTTPException(409, "이미 실행 중인 검색이 있습니다")
-        scan = Scan(uuid.uuid4().hex, jobs)
+        scan = Scan(uuid.uuid4().hex, user, jobs)
         try:
             scans[scan.id] = scan
             # 스레드 시작 전에 응답을 만들어야 항상 queued로 돌려준다(빠른 runner는 응답 전에 끝날 수 있다).
@@ -251,26 +329,28 @@ def create_app(
             "itinerary_enabled": planner is not None,
         }
 
-    def find(scan_id: str) -> Scan:
-        if scan_id not in scans:
+    def find(scan_id: str, user: str) -> Scan:
+        # 다른 사용자의 검색은 있는지조차 드러내지 않도록 같은 404로 답한다.
+        scan = scans.get(scan_id)
+        if scan is None or scan.owner != user:
             raise HTTPException(404, "검색을 찾을 수 없습니다")
-        return scans[scan_id]
+        return scan
 
     @app.get("/api/scans/{scan_id}")
-    def get_scan(scan_id: str) -> dict:
-        return find(scan_id).summary()
+    def get_scan(scan_id: str, user: CurrentUser) -> dict:
+        return find(scan_id, user).summary()
 
     @app.get("/api/scans/{scan_id}/results")
-    def get_results(scan_id: str) -> dict:
-        scan = find(scan_id)
+    def get_results(scan_id: str, user: CurrentUser) -> dict:
+        scan = find(scan_id, user)
         return {"id": scan.id, "status": scan.status, "results": scan.results}
 
     @app.post("/api/itineraries")
-    def plan_itinerary(request: ItineraryRequest) -> dict:
+    def plan_itinerary(request: ItineraryRequest, user: CurrentUser) -> dict:
         # 코스 생성은 브라우저·os.environ을 쓰지 않으므로 스캔 잠금(busy)과 무관하게 돈다.
         if planner is None:
             raise HTTPException(503, "GEMINI_API_KEY가 설정되지 않았습니다")
-        scan = find(request.scan_id)
+        scan = find(request.scan_id, user)
         if request.index >= len(scan.results) or "selected" not in scan.results[request.index]:
             raise HTTPException(422, "확인된 항공권이 있는 결과에만 코스를 만들 수 있습니다")
         row = scan.results[request.index]
@@ -292,20 +372,48 @@ def create_app(
     return app
 
 
+def _env_list(name: str) -> list[str]:
+    return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
+
+
+def _access_options() -> dict:
+    """Supabase 설정이 있으면 로그인을 켜고 배포용 호스트·출처를 연다. 없으면 지금처럼 loopback 전용이다."""
+    url, key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    hosts, origins = _env_list("FLIGHT_WATCH_ALLOWED_HOSTS"), _env_list("FLIGHT_WATCH_CORS_ORIGINS")
+    if not (url and key):
+        # 값 하나를 빠뜨린 배포가 조용히 인증 없는 모드로 뜨지 않게 기동을 멈춘다.
+        # 프록시가 Host를 loopback으로 바꾸면 TrustedHost만으로는 막지 못한다.
+        if url or key or hosts or origins:
+            raise RuntimeError("SUPABASE_URL과 SUPABASE_PUBLISHABLE_KEY를 모두 설정해야 외부 접근을 열 수 있습니다")
+        return {}
+    return {
+        "authenticate": supabase_authenticator(url, key),
+        "allowed_hosts": LOOPBACK_HOSTS + hosts,
+        "cors_origins": origins,
+    }
+
+
 def _default_app() -> FastAPI:
     # 코스 생성은 키가 있을 때만 켠다(fixture 재생에서도 키를 직접 넣었을 때만 Gemini를 부른다).
     gemini_key = os.environ.get("GEMINI_API_KEY")
     planner = gemini_planner(gemini_key, os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)) if gemini_key else None
+    access = _access_options()
     # 개발·E2E 확인용: 경로를 주면 브라우저와 유료 API 없이 fixture를 재생한다.
     fixture = os.environ.get("FLIGHT_WATCH_FIXTURE")
     if fixture:
         # 저장된 출발일이 지나도 재생할 수 있도록 기준일을 출발 전날로 고정한다.
         departure = date.fromisoformat(json.loads(Path(fixture).read_text())["job"]["departure_date"])
         return create_app(
-            fixture_runner(Path(fixture)), requires_api_key=False, today=departure - timedelta(days=1), planner=planner
+            fixture_runner(Path(fixture)),
+            requires_api_key=False,
+            today=departure - timedelta(days=1),
+            planner=planner,
+            **access,
         )
     browser = WarmBrowser()
-    return create_app(live_runner(browser), requires_api_key=True, on_shutdown=browser.close, planner=planner)
+    return create_app(
+        live_runner(browser), requires_api_key=True, on_shutdown=browser.close, planner=planner, **access
+    )
 
 
 app = _default_app()
